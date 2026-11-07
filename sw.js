@@ -1,5 +1,6 @@
-// কোড আপডেট করলে নিচের ভার্সন নম্বর বাড়াও (v1 -> v2), তাহলে ইউজারের ফোনে নতুন কোড আসবে
-const CACHE = 'vided-v1';
+// Vided service worker: works offline, and refreshes files in the background.
+// If something looks stale after an update, bump the version below (v2 -> v3).
+const CACHE = 'vided-v2';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -14,6 +15,19 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// Stale-while-revalidate: answer from cache instantly, refresh the cache in the background.
 self.addEventListener('fetch', e => {
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  e.respondWith(
+    caches.open(CACHE).then(cache =>
+      cache.match(req).then(hit => {
+        const net = fetch(req).then(res => {
+          if (res && res.ok) cache.put(req, res.clone());
+          return res;
+        }).catch(() => hit);
+        return hit || net;
+      })
+    )
+  );
 });

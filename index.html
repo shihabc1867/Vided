@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="bn">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -10,109 +10,262 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>🎬 Vided</header>
+<div id="app">
 
-<div id="stage">
-  <canvas id="cv" width="720" height="1280"></canvas>
-  <div id="info">প্রথমে ভিডিও বা ছবি দাও</div>
-  <progress id="prog" value="0" max="1"></progress>
-</div>
+  <header>
+    <div class="logo">Vided</div>
+    <div class="hbtns">
+      <button id="undo" class="ico" title="Undo">&#8630;</button>
+      <button id="redo" class="ico" title="Redo">&#8631;</button>
+      <button id="goExport" class="accent">Export</button>
+    </div>
+  </header>
 
-<div class="bar">
-  <button id="play">▶ প্লে</button>
-  <button id="stopb">⏹ স্টপ</button>
-  <select id="ratio">
-    <option>9:16</option>
-    <option>16:9</option>
-    <option>1:1</option>
-  </select>
-</div>
-
-<details open>
-  <summary>📁 ফাইল</summary>
-  <label>ভিডিও / ছবি</label>
-  <input type="file" id="file" accept="video/*,image/*">
-  <label>ফ্রেমে বসানো</label>
-  <select id="fit">
-    <option value="contain">পুরোটা দেখাও (ফিট)</option>
-    <option value="fill">ফ্রেম ভরো (ক্রপ)</option>
-  </select>
-</details>
-
-<details>
-  <summary>✂️ ট্রিম</summary>
-  <label>শুরু: <b id="tsl">0.0</b> সে.</label>
-  <input type="range" id="ts" min="0" max="10" step="0.1" value="0">
-  <label>শেষ: <b id="tel">10.0</b> সে.</label>
-  <input type="range" id="te" min="0" max="10" step="0.1" value="10">
-</details>
-
-<details>
-  <summary>🎨 ফিল্টার</summary>
-  <select id="preset">
-    <option value="">কোনো ফিল্টার নেই</option>
-    <option value="grayscale(1)">সাদা-কালো</option>
-    <option value="sepia(0.9)">সেপিয়া</option>
-    <option value="hue-rotate(180deg)">কুল টোন</option>
-    <option value="invert(1)">ইনভার্ট</option>
-  </select>
-  <label>উজ্জ্বলতা</label>
-  <input type="range" id="fb" min="0" max="200" value="100">
-  <label>কনট্রাস্ট</label>
-  <input type="range" id="fc" min="0" max="200" value="100">
-  <label>স্যাচুরেশন</label>
-  <input type="range" id="fs" min="0" max="300" value="100">
-</details>
-
-<details>
-  <summary>🔤 টেক্সট</summary>
-  <div class="row">
-    <button id="addT">+ নতুন</button>
-    <button id="delT">🗑 মুছো</button>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="empty">Open the <b>Media</b> tab and tap<br>“Add video / image” to start</div>
   </div>
-  <select id="tl"></select>
-  <input id="txt" placeholder="টেক্সট লেখো">
-  <label>সাইজ</label>
-  <input type="range" id="tsize" min="20" max="200" value="64">
-  <label>রঙ</label>
-  <input type="color" id="tcol" value="#ffffff">
-  <label>দেখা যাবে (সেকেন্ড): শুরু</label>
-  <input type="number" id="tfrom" min="0" step="0.1" value="0">
-  <label>শেষ</label>
-  <input type="number" id="tto" min="0" step="0.1" value="5">
-  <small>টেক্সট সরাতে ক্যানভাসে আঙুল দিয়ে টেনে নাও।</small>
-</details>
 
-<details>
-  <summary>🎵 অডিও</summary>
-  <label>ব্যাকগ্রাউন্ড মিউজিক</label>
-  <input type="file" id="mfile" accept="audio/*">
-  <label>মূল ভিডিওর ভলিউম</label>
-  <input type="range" id="vv" min="0" max="200" value="100">
-  <label>মিউজিকের ভলিউম</label>
-  <input type="range" id="mv" min="0" max="200" value="60">
-</details>
+  <div class="transport">
+    <button id="toStart" class="ico" title="Go to start">&#9198;</button>
+    <button id="play" class="ico big" title="Play / pause">&#9654;</button>
+    <button id="toEnd" class="ico" title="Go to end">&#9197;</button>
+    <span id="time">0:00.0 / 0:00.0</span>
+    <label class="zoomlbl">Zoom <input type="range" id="zoom" min="20" max="200" value="60"></label>
+  </div>
+  <input type="range" id="scrub" min="0" max="0" step="0.01" value="0">
+  <div id="tlwrap"><canvas id="tl"></canvas></div>
 
-<details open>
-  <summary>🚀 এক্সপোর্ট</summary>
-  <label>ফরম্যাট</label>
-  <select id="fmt"></select>
-  <label>কোয়ালিটি</label>
-  <select id="q">
-    <option value="2500000">কম (ছোট ফাইল)</option>
-    <option value="5000000" selected>মাঝারি</option>
-    <option value="8000000">বেশি</option>
-  </select>
-  <button id="exp" class="big">এক্সপোর্ট শুরু করো</button>
-  <small>এক্সপোর্ট চলার সময় অ্যাপ খোলা রাখো, স্ক্রিন অফ করো না।</small>
-  <video id="out" controls playsinline></video>
-  <a id="dl" class="big" style="display:none">⬇ ডাউনলোড</a>
-</details>
+  <nav id="tabs">
+    <button data-tab="media" class="active">Media</button>
+    <button data-tab="adjust">Adjust</button>
+    <button data-tab="animate">Animate</button>
+    <button data-tab="text">Text</button>
+    <button data-tab="audio">Audio</button>
+    <button data-tab="export">Export</button>
+  </nav>
+
+  <main id="panels">
+
+    <!-- MEDIA -->
+    <section class="panel active" id="p-media">
+      <label class="filebtn">+ Add video / image
+        <input type="file" id="addMedia" accept="video/*,image/*" multiple hidden>
+      </label>
+      <div id="selInfo" class="hint">No clip selected. Tap a clip on the timeline.</div>
+      <div class="needsel" id="n-media">
+        <div class="grid3">
+          <button id="bSplit">Split</button>
+          <button id="bDup">Duplicate</button>
+          <button id="bDel" class="danger">Delete</button>
+        </div>
+        <div class="grid2">
+          <button id="bLeft">&#9664; Move earlier</button>
+          <button id="bRight">Move later &#9654;</button>
+        </div>
+        <div class="field" data-id="trIn" data-label="Trim start" data-min="0" data-max="10" data-step="0.05" data-val="0" data-unit="s"></div>
+        <div class="field" data-id="trOut" data-label="Trim end" data-min="0.1" data-max="10" data-step="0.05" data-val="10" data-unit="s"></div>
+        <div class="field" data-id="spd" data-label="Speed" data-min="25" data-max="400" data-step="5" data-val="100" data-unit="%"></div>
+        <div class="field" data-id="cvol" data-label="Clip volume" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+        <label class="lbl">Transition into this clip</label>
+        <select id="trType">
+          <option value="none">None (hard cut)</option>
+          <option value="fade">Cross dissolve</option>
+          <option value="dip">Dip to black</option>
+          <option value="slideL">Slide left</option>
+          <option value="slideR">Slide right</option>
+          <option value="zoom">Zoom</option>
+          <option value="wipe">Wipe</option>
+        </select>
+        <div class="field" data-id="trDur" data-label="Transition length" data-min="0.2" data-max="2" data-step="0.1" data-val="0.5" data-unit="s"></div>
+        <div class="hint">On the first clip, any transition fades in from black.</div>
+      </div>
+    </section>
+
+    <!-- ADJUST -->
+    <section class="panel" id="p-adjust">
+      <div class="needsel" id="n-adjust">
+        <label class="lbl">Filter preset</label>
+        <select id="fPreset">
+          <option value="">None</option>
+          <option value="bw">Black &amp; white</option>
+          <option value="noir">Noir</option>
+          <option value="sepia">Sepia</option>
+          <option value="vintage">Vintage</option>
+          <option value="warm">Warm</option>
+          <option value="cool">Cool</option>
+          <option value="vivid">Vivid</option>
+        </select>
+        <div class="field" data-id="fb" data-label="Brightness" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+        <div class="field" data-id="fc" data-label="Contrast" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+        <div class="field" data-id="fs" data-label="Saturation" data-min="0" data-max="300" data-step="1" data-val="100" data-unit="%"></div>
+        <div class="field" data-id="fh" data-label="Hue" data-min="0" data-max="360" data-step="1" data-val="0" data-unit="&deg;"></div>
+        <div class="field" data-id="fbl" data-label="Blur" data-min="0" data-max="20" data-step="0.5" data-val="0" data-unit="px"></div>
+        <label class="lbl">Fit in frame</label>
+        <select id="fFit">
+          <option value="contain">Fit (show everything)</option>
+          <option value="cover">Fill (crop edges)</option>
+        </select>
+        <div class="grid2">
+          <button id="fAll">Apply look to all clips</button>
+          <button id="fReset">Reset adjustments</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ANIMATE -->
+    <section class="panel" id="p-animate">
+      <div class="needsel" id="n-animate">
+        <div class="field" data-id="sc" data-label="Scale" data-min="10" data-max="300" data-step="1" data-val="100" data-unit="%"></div>
+        <div class="field" data-id="px" data-label="Position X" data-min="-100" data-max="100" data-step="1" data-val="0" data-unit="%"></div>
+        <div class="field" data-id="py" data-label="Position Y" data-min="-100" data-max="100" data-step="1" data-val="0" data-unit="%"></div>
+        <div class="field" data-id="rot" data-label="Rotation" data-min="-180" data-max="180" data-step="1" data-val="0" data-unit="&deg;"></div>
+        <div class="field" data-id="op" data-label="Opacity" data-min="0" data-max="100" data-step="1" data-val="100" data-unit="%"></div>
+        <div class="grid2">
+          <button id="kAdd" class="accent">&#9670; Add keyframe here</button>
+          <button id="kDel">Remove keyframe here</button>
+        </div>
+        <div class="grid2">
+          <button id="kIn">Ken Burns: zoom in</button>
+          <button id="kOut">Ken Burns: zoom out</button>
+        </div>
+        <div class="grid2">
+          <button id="kClear">Clear keyframes</button>
+          <button id="kReset">Reset transform</button>
+        </div>
+        <div id="kList" class="chips"></div>
+        <div class="hint">Move the playhead, change a value, then add a keyframe. Once a clip has keyframes, changing a value at another time creates a new keyframe automatically. You can also drag the picture in the preview.</div>
+      </div>
+    </section>
+
+    <!-- TEXT -->
+    <section class="panel" id="p-text">
+      <label class="lbl">Motion graphics templates (added at the playhead)</label>
+      <div class="chips tpl">
+        <button data-tpl="title">Title card</button>
+        <button data-tpl="lower">Lower third</button>
+        <button data-tpl="cta">Subscribe</button>
+        <button data-tpl="type">Typewriter</button>
+        <button data-tpl="caption">Caption</button>
+      </div>
+      <div class="grid3">
+        <button id="tAdd">+ Text</button>
+        <button id="tDup">Duplicate</button>
+        <button id="tDel" class="danger">Delete</button>
+      </div>
+      <select id="tSel"></select>
+      <div class="needsel" id="n-text">
+        <input type="text" id="tText" placeholder="Type your text">
+        <div class="field" data-id="tSize" data-label="Size" data-min="20" data-max="220" data-step="1" data-val="64" data-unit=""></div>
+        <div class="grid2">
+          <label class="colorlbl">Text color <input type="color" id="tColor" value="#ffffff"></label>
+          <label class="colorlbl">Box color <input type="color" id="tBg" value="#6d4cff"></label>
+        </div>
+        <div class="grid2">
+          <label class="check"><input type="checkbox" id="tBgOn"> Background box</label>
+          <label class="check"><input type="checkbox" id="tBold" checked> Bold</label>
+        </div>
+        <label class="lbl">Animation</label>
+        <select id="tAnim">
+          <option value="none">None</option>
+          <option value="fade">Fade</option>
+          <option value="up">Slide up</option>
+          <option value="left">Slide from left</option>
+          <option value="pop">Pop</option>
+          <option value="type">Typewriter</option>
+        </select>
+        <div class="grid2">
+          <label class="lbl">Starts at (s)<input type="number" id="tFrom" min="0" step="0.1"></label>
+          <label class="lbl">Ends at (s)<input type="number" id="tTo" min="0" step="0.1"></label>
+        </div>
+        <button id="tNow">Start at playhead</button>
+        <div class="hint">Drag the text in the preview to move it.</div>
+      </div>
+    </section>
+
+    <!-- AUDIO -->
+    <section class="panel" id="p-audio">
+      <label class="filebtn">+ Add music / voice
+        <input type="file" id="addAudio" accept="audio/*" multiple hidden>
+      </label>
+      <select id="aSel"></select>
+      <div class="needsel" id="n-audio">
+        <div class="field" data-id="aVol" data-label="Volume" data-min="0" data-max="200" data-step="1" data-val="80" data-unit="%"></div>
+        <label class="lbl">Starts at (s)<input type="number" id="aStart" min="0" step="0.1" value="0"></label>
+        <div class="grid2">
+          <button id="aNow">Start at playhead</button>
+          <button id="aDel" class="danger">Remove track</button>
+        </div>
+        <div class="hint">Audio that runs past the end of the video is cut off. Use “Clip volume” in the Media tab to change the sound of a video clip.</div>
+      </div>
+    </section>
+
+    <!-- EXPORT -->
+    <section class="panel" id="p-export">
+      <label class="lbl">Aspect ratio</label>
+      <select id="xRatio">
+        <option>9:16</option>
+        <option>16:9</option>
+        <option>1:1</option>
+        <option>4:5</option>
+      </select>
+      <label class="lbl">Export resolution</label>
+      <select id="xRes">
+        <option value="540">540p (small file)</option>
+        <option value="720" selected>720p HD</option>
+        <option value="1080">1080p Full HD</option>
+      </select>
+      <label class="lbl">Frame rate</label>
+      <select id="xFps">
+        <option value="24">24 fps</option>
+        <option value="30" selected>30 fps</option>
+        <option value="60">60 fps</option>
+      </select>
+      <label class="lbl">Quality</label>
+      <select id="xBit">
+        <option value="2500000">Low (smaller file)</option>
+        <option value="5000000" selected>Medium</option>
+        <option value="10000000">High</option>
+      </select>
+      <label class="lbl">Format</label>
+      <select id="xFmt"></select>
+      <label class="lbl">Preview quality</label>
+      <select id="xPrev">
+        <option value="360">Fast (360p)</option>
+        <option value="540" selected>Normal (540p)</option>
+        <option value="720">Sharp (720p)</option>
+      </select>
+      <div class="grid2">
+        <label class="colorlbl">Background <input type="color" id="xBg" value="#000000"></label>
+        <span></span>
+      </div>
+      <div class="grid2">
+        <label class="check"><input type="checkbox" id="xLb"> Cinematic bars</label>
+        <label class="check"><input type="checkbox" id="xVig"> Vignette</label>
+      </div>
+      <button id="xBtn" class="big green">Export video</button>
+      <div class="hint">Export runs in real time: a 1-minute video takes about 1 minute. Keep Vided open and the screen on until it finishes.</div>
+      <video id="xOut" controls playsinline></video>
+      <a id="xDl" class="big green" style="display:none">Download video</a>
+      <button id="xShare" class="big" style="display:none">Share</button>
+    </section>
+
+  </main>
+</div>
+
+<div id="busy">
+  <div class="box">
+    <div id="busyMsg">Exporting… keep this screen open</div>
+    <progress id="busyProg" value="0" max="1"></progress>
+    <button id="busyCancel" class="danger">Cancel</button>
+  </div>
+</div>
+<div id="toast"></div>
 
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').catch(function () {});
 }
 </script>
 </body>

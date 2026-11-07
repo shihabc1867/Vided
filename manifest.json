@@ -1,6 +1,7 @@
 {
   "name": "Vided",
   "short_name": "Vided",
+  "description": "Free video editor in your browser",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
