@@ -43,6 +43,7 @@
     <button data-tab="text">Text</button>
     <button data-tab="audio">Audio</button>
     <button data-tab="export">Export</button>
+    <button data-tab="project">Project</button>
   </nav>
 
   <main id="panels">
@@ -62,6 +63,10 @@
         <div class="grid2">
           <button id="bLeft">&#9664; Move earlier</button>
           <button id="bRight">Move later &#9654;</button>
+        </div>
+        <div class="grid2">
+          <button id="bEditImg">Edit image…</button>
+          <button id="bFreeze">Freeze frame</button>
         </div>
         <div class="field" data-id="trIn" data-label="Trim start" data-min="0" data-max="10" data-step="0.05" data-val="0" data-unit="s"></div>
         <div class="field" data-id="trOut" data-label="Trim end" data-min="0.1" data-max="10" data-step="0.05" data-val="10" data-unit="s"></div>
@@ -202,6 +207,12 @@
 
     <!-- EXPORT -->
     <section class="panel" id="p-export">
+      <label class="lbl">Export engine</label>
+      <select id="xEngine">
+        <option value="fast" selected>Fast MP4 (recommended)</option>
+        <option value="realtime">Real-time (most compatible)</option>
+      </select>
+      <div class="hint" id="xEngineNote"></div>
       <label class="lbl">Aspect ratio</label>
       <select id="xRatio">
         <option>9:16</option>
@@ -227,8 +238,10 @@
         <option value="5000000" selected>Medium</option>
         <option value="10000000">High</option>
       </select>
-      <label class="lbl">Format</label>
-      <select id="xFmt"></select>
+      <div id="xFmtWrap">
+        <label class="lbl">Format</label>
+        <select id="xFmt"></select>
+      </div>
       <label class="lbl">Preview quality</label>
       <select id="xPrev">
         <option value="360">Fast (360p)</option>
@@ -244,13 +257,104 @@
         <label class="check"><input type="checkbox" id="xVig"> Vignette</label>
       </div>
       <button id="xBtn" class="big green">Export video</button>
-      <div class="hint">Export runs in real time: a 1-minute video takes about 1 minute. Keep Vided open and the screen on until it finishes.</div>
+      <div class="hint">Keep Vided open and the screen on until the export finishes.</div>
       <video id="xOut" controls playsinline></video>
       <a id="xDl" class="big green" style="display:none">Download video</a>
       <button id="xShare" class="big" style="display:none">Share</button>
     </section>
 
+    <!-- PROJECT -->
+    <section class="panel" id="p-project">
+      <label class="lbl">Project name</label>
+      <input type="text" id="pName" value="Untitled project" placeholder="My project">
+      <div class="grid2">
+        <button id="pSave" class="accent">Save now</button>
+        <button id="pNew">New project</button>
+      </div>
+      <div class="hint" id="pStatus">Projects save automatically on this phone, together with your video, image and audio files.</div>
+      <label class="lbl">Saved projects</label>
+      <div id="pList"></div>
+      <div class="hint" id="pStorage"></div>
+    </section>
+
   </main>
+</div>
+
+<div id="ied">
+  <div class="ied-top">
+    <button id="iedCancel">Cancel</button>
+    <span>Edit image</span>
+    <button id="iedApply" class="accent">Done</button>
+  </div>
+  <div id="iedStage"><canvas id="iedCv"></canvas></div>
+  <div class="ied-tabs">
+    <button data-it="crop" class="active">Crop</button>
+    <button data-it="erase">Eraser</button>
+    <button data-it="adjust">Adjust</button>
+    <button data-it="xform">Rotate</button>
+  </div>
+  <div class="ied-tools">
+    <div class="ied-panel active" id="it-crop">
+      <div class="chips">
+        <button data-r="0" class="on">Free</button>
+        <button data-r="1">1:1</button>
+        <button data-r="0.5625">9:16</button>
+        <button data-r="1.7778">16:9</button>
+        <button data-r="0.8">4:5</button>
+        <button data-r="0.75">3:4</button>
+      </div>
+      <button id="ieCrop" class="accent">Apply crop</button>
+      <div class="hint">Drag the corners or the box, then tap “Apply crop”.</div>
+    </div>
+    <div class="ied-panel" id="it-erase">
+      <div class="chips">
+        <button data-mode="erase" class="on">Erase</button>
+        <button data-mode="restore">Restore</button>
+        <button data-mode="magic">Magic erase</button>
+      </div>
+      <div id="ieBrushBox">
+        <div class="field" data-id="ieSize" data-label="Brush size" data-min="10" data-max="160" data-step="1" data-val="50" data-unit="px"></div>
+        <div class="field" data-id="ieSoft" data-label="Softness" data-min="0" data-max="100" data-step="1" data-val="40" data-unit="%"></div>
+      </div>
+      <div id="ieMagicBox" style="display:none">
+        <div class="field" data-id="ieTol" data-label="Tolerance" data-min="1" data-max="100" data-step="1" data-val="25" data-unit="%"></div>
+        <div class="hint">Tap a color to erase that whole area (for example a plain background).</div>
+      </div>
+    </div>
+    <div class="ied-panel" id="it-adjust">
+      <select id="iePreset">
+        <option value="">No filter</option>
+        <option value="bw">Black &amp; white</option>
+        <option value="noir">Noir</option>
+        <option value="sepia">Sepia</option>
+        <option value="vintage">Vintage</option>
+        <option value="warm">Warm</option>
+        <option value="cool">Cool</option>
+        <option value="vivid">Vivid</option>
+      </select>
+      <div class="field" data-id="ieB" data-label="Brightness" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+      <div class="field" data-id="ieC" data-label="Contrast" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+      <div class="field" data-id="ieS" data-label="Saturation" data-min="0" data-max="300" data-step="1" data-val="100" data-unit="%"></div>
+      <div class="field" data-id="ieH" data-label="Hue" data-min="0" data-max="360" data-step="1" data-val="0" data-unit="&deg;"></div>
+      <div class="field" data-id="ieBl" data-label="Blur" data-min="0" data-max="20" data-step="0.5" data-val="0" data-unit="px"></div>
+      <div class="grid2">
+        <button id="ieAdj" class="accent">Apply adjustments</button>
+        <button id="ieAdjReset">Reset</button>
+      </div>
+    </div>
+    <div class="ied-panel" id="it-xform">
+      <div class="grid2">
+        <button id="ieRotL">&#8634; Rotate left</button>
+        <button id="ieRotR">Rotate right &#8635;</button>
+        <button id="ieFlipH">Flip horizontal</button>
+        <button id="ieFlipV">Flip vertical</button>
+      </div>
+    </div>
+    <div class="grid2 ied-undo">
+      <button id="iedUndo">Undo</button>
+      <button id="iedRevert" class="danger">Revert all</button>
+    </div>
+  </div>
 </div>
 
 <div id="busy">
@@ -262,7 +366,12 @@
 </div>
 <div id="toast"></div>
 
+<script src="mux.js"></script>
+<script src="demux.js"></script>
 <script src="app.js"></script>
+<script src="export.js"></script>
+<script src="imgedit.js"></script>
+<script src="store.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function () {});

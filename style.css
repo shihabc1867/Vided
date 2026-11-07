@@ -75,3 +75,26 @@ input[type=color]{width:100%;height:38px;border:1px solid var(--line);border-rad
 
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2a2a3a;color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
+
+/* ---- Phase 3: project list, image editor ---- */
+.prow{display:grid;grid-template-columns:56px 1fr auto auto;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0}
+.prow.cur{border-color:var(--acc)}
+.prow img{width:56px;height:32px;object-fit:cover;border-radius:4px;background:#000}
+.pinfo{min-width:0}
+.pinfo b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pinfo span{display:block;font-size:11px;color:var(--mut)}
+.prow button{padding:6px 10px;min-height:32px;font-size:13px}
+
+#ied{display:none;position:fixed;inset:0;z-index:40;background:var(--bg);flex-direction:column;max-width:760px;margin:0 auto}
+#ied.on{display:flex}
+.ied-top{flex:none;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);font-weight:700}
+#iedStage{flex:1;min-height:0;background:#0a0a0f;position:relative;overflow:hidden}
+#iedCv{display:block;touch-action:none}
+.ied-tabs{flex:none;display:flex;gap:6px;padding:6px 10px;background:var(--panel);overflow-x:auto}
+.ied-tabs button{flex:1;border-radius:18px;background:transparent;color:var(--mut);min-height:34px;padding:6px 10px}
+.ied-tabs button.active{background:var(--acc);border-color:var(--acc);color:#fff}
+.ied-tools{flex:none;max-height:38vh;overflow-y:auto;padding:8px 12px 14px;background:var(--bg)}
+.ied-panel{display:none}
+.ied-panel.active{display:block}
+.chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.ied-undo{margin-top:10px}

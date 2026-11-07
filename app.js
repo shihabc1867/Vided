@@ -25,12 +25,14 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('on'), 2600);
 }
 
+function markDirty() { if (typeof storeDirty === 'function') storeDirty(); }
+
 /* ---------- state ---------- */
 const S = {
   clips: [], texts: [], audio: [],
   sel: -1, tsel: -1, asel: -1,
   t: 0, total: 0,
-  playing: false, exporting: false,
+  playing: false, exporting: false, fast: false,
   bg: '#000000', letterbox: false, vignette: false,
   ratio: '9:16', prev: 540
 };
@@ -99,6 +101,7 @@ function restore(s) {
   compute();
   S.t = clamp(S.t, 0, S.total);
   refreshAll();
+  markDirty();
 }
 // Call BEFORE a change. Same key within 0.9s = one undo step (slider drags).
 function touch(key) {
@@ -109,6 +112,7 @@ function touch(key) {
   if (U.length > 40) U.shift();
   R.length = 0;
   updUR();
+  markDirty();
 }
 function undo() {
   if (!U.length || S.exporting) return;
@@ -207,10 +211,10 @@ function loadVideoEl(file) {
     el.playsInline = true;
     el.preload = 'auto';
     el.src = URL.createObjectURL(file);
-    el.onerror = () => rej(new Error('Cannot open ' + file.name));
+    el.onerror = () => rej(new Error('Cannot open ' + (file.name || 'video')));
     el.onloadedmetadata = () => {
       const done = () => {
-        if (!el.videoWidth) return rej(new Error('Unsupported video: ' + file.name));
+        if (!el.videoWidth) return rej(new Error('Unsupported video: ' + (file.name || 'video')));
         res(el);
       };
       // Browser-recorded WebM files report an infinite duration until seeked to the end.
@@ -229,28 +233,31 @@ function thumbOf(src, w, h) {
   try { x.drawImage(src, (96 - w * r) / 2, (54 - h * r) / 2, w * r, h * r); } catch (e) { }
   return t;
 }
-async function makeClip(file) {
-  const base = {
-    id: nid(), name: file.name, in: 0, speed: 1, vol: 100,
-    tr: { type: 'none', dur: 0.5 }, f: defFilter(), fit: 'contain',
-    sc: 100, px: 0, py: 0, rot: 0, op: 100, kf: [],
-    start: 0, end: 0, ov: 0, src: null, gain: null
-  };
-  if (file.type.startsWith('image/')) {
+async function mediaFromBlob(blob, name) {
+  if ((blob.type || '').startsWith('image/')) {
     const img = new Image();
-    img.src = URL.createObjectURL(file);
-    await img.decode().catch(() => { throw new Error('Cannot open ' + file.name); });
-    return { ...base, type: 'image', el: img, dur: 30, out: 4, thumb: thumbOf(img, img.naturalWidth, img.naturalHeight) };
+    img.src = URL.createObjectURL(blob);
+    await img.decode().catch(() => { throw new Error('Cannot open ' + name); });
+    return { type: 'image', el: img, dur: 30, thumb: thumbOf(img, img.naturalWidth, img.naturalHeight) };
   }
-  const el = await loadVideoEl(file);
-  const c = { ...base, type: 'video', el, dur: el.duration, out: el.duration, thumb: null };
+  const el = await loadVideoEl(blob);
   await new Promise(r => {
     el.addEventListener('seeked', function f() { el.removeEventListener('seeked', f); r(); });
     el.currentTime = Math.min(0.1, el.duration / 2);
     setTimeout(r, 1500);
   });
-  c.thumb = thumbOf(el, el.videoWidth, el.videoHeight);
-  return c;
+  return { type: 'video', el, dur: el.duration, thumb: thumbOf(el, el.videoWidth, el.videoHeight) };
+}
+async function makeClip(file) {
+  const m = await mediaFromBlob(file, file.name);
+  return {
+    id: nid(), name: file.name, type: m.type, el: m.el, dur: m.dur, thumb: m.thumb,
+    blob: file, mkey: 'm' + nid(),
+    in: 0, out: m.type === 'image' ? 4 : m.dur, speed: 1, vol: 100,
+    tr: { type: 'none', dur: 0.5 }, f: defFilter(), fit: 'contain',
+    sc: 100, px: 0, py: 0, rot: 0, op: 100, kf: [],
+    start: 0, end: 0, ov: 0, src: null, gain: null
+  };
 }
 async function addMedia(files) {
   let n = 0;
@@ -278,7 +285,7 @@ async function addAudio(files) {
         el.onloadedmetadata = () => res();
         el.onerror = () => rej(new Error('Cannot open ' + f.name));
       });
-      const a = { id: nid(), type: 'audio', name: f.name, el, dur: isFinite(el.duration) ? el.duration : 600, start: 0, vol: 80, src: null, gain: null };
+      const a = { id: nid(), type: 'audio', name: f.name, blob: f, mkey: 'm' + nid(), el, dur: isFinite(el.duration) ? el.duration : 600, start: 0, vol: 80, src: null, gain: null };
       S.audio.push(a);
       wire(a);
       S.asel = a.id;
@@ -329,6 +336,19 @@ function frameState(t) {
     out.push({ c, fx });
   });
   return out;
+}
+
+// Seek a <video> and wait until the frame is ready (used when exporting frame by frame).
+function seekEl(el, target) {
+  return new Promise(res => {
+    if (!el.seeking && Math.abs(el.currentTime - target) < 0.0005 && el.readyState >= 2) return res();
+    let done = false;
+    const fin = () => { if (done) return; done = true; el.removeEventListener('seeked', fin); clearTimeout(tm); res(); };
+    const tm = setTimeout(fin, 2000);
+    el.addEventListener('seeked', fin);
+    if (!el.paused) el.pause();
+    el.currentTime = target;
+  });
 }
 
 /* ---------- keep <video>/<audio> elements in sync with the playhead ---------- */
@@ -386,9 +406,17 @@ function filterOf(f, F) {
 function drawClip(c, t, fx) {
   const W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
   const p = evalProps(c, t - c.start);
-  const el = c.el;
-  const sw = c.type === 'video' ? el.videoWidth : el.naturalWidth;
-  const sh = c.type === 'video' ? el.videoHeight : el.naturalHeight;
+  const fr = S.exporting ? c.exFrame : null; // frame from the fast exporter's decoder
+  let el = c.el, sw, sh, rw, rh, rot = 0;
+  if (fr) {
+    rot = c.fs ? c.fs.rot : 0;
+    rw = fr.displayWidth; rh = fr.displayHeight;
+    sw = rot % 180 ? rh : rw; sh = rot % 180 ? rw : rh;
+    el = fr;
+  } else {
+    sw = rw = c.type === 'video' ? el.videoWidth : el.naturalWidth;
+    sh = rh = c.type === 'video' ? el.videoHeight : el.naturalHeight;
+  }
   if (!sw || !sh) return;
   const base = c.fit === 'cover' ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh);
   const s = base * (p.sc / 100) * fx.scale;
@@ -397,8 +425,9 @@ function drawClip(c, t, fx) {
   ctx.globalAlpha = clamp(fx.alpha * p.op / 100, 0, 1);
   ctx.translate(W / 2 + p.px / 100 * W + fx.dx, H / 2 + p.py / 100 * H);
   ctx.rotate(p.rot * Math.PI / 180);
+  if (rot) ctx.rotate(rot * Math.PI / 180);
   ctx.filter = filterOf(c.f, F);
-  try { ctx.drawImage(el, -sw * s / 2, -sh * s / 2, sw * s, sh * s); } catch (e) { }
+  try { ctx.drawImage(el, -rw * s / 2, -rh * s / 2, rw * s, rh * s); } catch (e) { }
   ctx.restore();
 }
 function rr(x, y, w, h, r) {
@@ -464,7 +493,7 @@ function drawText(L, t) {
   }
   ctx.restore();
 }
-function render() {
+function render(noSync) {
   const W = cv.width, H = cv.height;
   ctx.globalAlpha = 1;
   ctx.filter = 'none';
@@ -472,7 +501,7 @@ function render() {
   ctx.fillRect(0, 0, W, H);
   const t = S.total > 0 ? Math.min(S.t, S.total - 0.001) : 0;
   const st = frameState(t);
-  syncMedia(t, st);
+  if (!noSync) syncMedia(t, st);
   st.forEach(({ c, fx }) => drawClip(c, t, fx));
   if (S.vignette) {
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
@@ -544,7 +573,7 @@ function loop(now) {
       if (S.exporting) finishExport(); else pause();
     }
   }
-  if (S.playing || now - lastDraw > 120) { render(); lastDraw = now; }
+  if (!S.fast && (S.playing || now - lastDraw > 120)) { render(); lastDraw = now; }
   if (S.playing && now - lastTl > 90) {
     updateTime();
     drawTimeline();
@@ -1048,14 +1077,14 @@ TYPES.forEach(t => {
   o.textContent = t.includes('mp4') ? 'MP4' : 'WebM' + (t.includes('vp9') ? ' (VP9)' : t.includes('vp8') ? ' (VP8)' : '');
   $('xFmt').appendChild(o);
 });
-$('xRatio').onchange = e => { S.ratio = e.target.value; setSize(S.prev); };
+$('xRatio').onchange = e => { S.ratio = e.target.value; setSize(S.prev); markDirty(); };
 $('xPrev').onchange = e => { S.prev = +e.target.value; setSize(S.prev); };
-$('xBg').oninput = e => { S.bg = e.target.value; };
-$('xLb').onchange = e => { S.letterbox = e.target.checked; };
-$('xVig').onchange = e => { S.vignette = e.target.checked; };
+$('xBg').oninput = e => { S.bg = e.target.value; markDirty(); };
+$('xLb').onchange = e => { S.letterbox = e.target.checked; markDirty(); };
+$('xVig').onchange = e => { S.vignette = e.target.checked; markDirty(); };
 
 let rec = null, chunks = [], lock = null, cancelled = false;
-async function doExport() {
+async function runRealtime() {
   if (S.exporting) return;
   if (!S.clips.length) return toast('Add a clip first');
   if (!TYPES.length) return toast('Export is not supported in this browser. Use Chrome.');
@@ -1100,7 +1129,9 @@ function exportDone(type) {
   pauseAllMedia();
   if (cancelled) return toast('Export cancelled');
   const mime = type.split(';')[0];
-  const blob = new Blob(chunks, { type: mime });
+  presentExport(new Blob(chunks, { type: mime }), mime);
+}
+function presentExport(blob, mime) {
   const url = URL.createObjectURL(blob);
   const ext = mime.includes('mp4') ? 'mp4' : 'webm';
   $('xOut').src = url;
@@ -1117,7 +1148,7 @@ function exportDone(type) {
   toast('Export finished (' + (blob.size / 1048576).toFixed(1) + ' MB)');
   updateTime(); drawTimeline();
 }
-$('xBtn').onclick = doExport;
+$('xBtn').onclick = () => doExport();
 $('goExport').onclick = () => openTab('export');
 $('busyCancel').onclick = () => {
   cancelled = true;
@@ -1210,4 +1241,4 @@ refreshAll();
 requestAnimationFrame(loop);
 
 // Small hook so automated tests can inspect the app. Harmless in normal use.
-window.__vided = { S, compute, render, frameState, evalProps, doExport, undo, redo };
+window.__vided = { S, compute, render, frameState, evalProps, undo, redo, addMedia, makeClip };
