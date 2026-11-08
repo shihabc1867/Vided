@@ -71,8 +71,8 @@ function serialize() {
       tr: { ...c.tr }, f: { ...c.f }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k }))
     })),
     texts: S.texts.map(t => { const { _box, ...r } = t; return r; }),
-    audio: S.audio.map(a => pick(a, ['id', 'name', 'mkey', 'dur', 'in', 'out', 'fi', 'fo', 'start', 'vol'])),
-    caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle }
+    audio: S.audio.map(a => pick(a, ['id', 'name', 'mkey', 'dur', 'in', 'out', 'fi', 'fo', 'start', 'vol', 'voice', 'duck', 'beats', 'bpm'])),
+    caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle }, duck: { ...S.duck }
   };
 }
 
@@ -119,7 +119,7 @@ function saveProject() {
 
 async function resetProject(name) {
   pause(); pauseAllMedia();
-  S.clips = []; S.texts = []; S.audio = []; S.caps = []; S.capStyle = defCapStyle(); S.capSel = -1;
+  S.clips = []; S.texts = []; S.audio = []; S.caps = []; S.capStyle = defCapStyle(); S.capSel = -1; S.duck = { amt: 70, video: true };
   S.sel = -1; S.tsel = -1; S.asel = -1; S.t = 0;
   compute();
   U.length = 0; R.length = 0; lastKey = '';
@@ -158,7 +158,7 @@ async function openProject(id) {
   }
   S.clips = clips; S.audio = audio;
   S.texts = d.texts.map(t => ({ ...t }));
-  S.caps = (d.caps || []).map(c => ({ ...c })); S.capStyle = { ...defCapStyle(), ...(d.capStyle || {}) }; S.capSel = -1;
+  S.caps = (d.caps || []).map(c => ({ ...c })); S.capStyle = { ...defCapStyle(), ...(d.capStyle || {}) }; S.capSel = -1; S.duck = { amt: 70, video: true, ...(d.duck || {}) };
   S.ratio = d.ratio || '9:16'; S.bg = d.bg || '#000000'; S.letterbox = !!d.letterbox; S.vignette = !!d.vignette;
   $('xRatio').value = S.ratio; $('xBg').value = S.bg; $('xLb').checked = S.letterbox; $('xVig').checked = S.vignette;
   const maxId = Math.max(0, ...clips.map(c => c.id), ...audio.map(a => a.id), ...S.texts.map(t => t.id), ...S.caps.map(c => c.id));

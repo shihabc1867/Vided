@@ -136,6 +136,7 @@ function refreshAudio() {
   if (c) { setR('cfi', c.fi || 0); setR('cfo', c.fo || 0); }
   [...S.clips, ...S.audio].forEach(ensurePeaks);
   drawWave();
+  if (window.refreshVoice) refreshVoice();
 }
 const withAudio = (key, fn) => e => {
   const a = selAudio(); if (!a) return;

@@ -35,6 +35,7 @@ async function doExport() {
   if (!S.clips.length) return toast('Add a clip first');
   pause();
   if (window.gateExport) gateExport();
+  try { if (window.prepareDucking) await prepareDucking(); } catch (e) { }
   try { if (window.prepareCutouts) { busyMsg('Loading AI cutout…'); $('busy').classList.add('on'); await prepareCutouts(); $('busy').classList.remove('on'); } }
   catch (e) { $('busy').classList.remove('on'); return toast(e.message); }
   if ($('xEngine').value === 'fast' && FAST.ok) {
@@ -136,7 +137,7 @@ async function mixAudio(total, sr = 48000) {
     const aL = Math.min(alen(a), Math.max(0.01, buf.duration - a.in));
     const steps = Math.max(2, Math.ceil(aL * 100) + 1);
     const curve = new Float32Array(steps);
-    for (let k = 0; k < steps; k++) curve[k] = (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, (k / (steps - 1)) * aL, aL);
+    for (let k = 0; k < steps; k++) curve[k] = (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, (k / (steps - 1)) * aL, aL) * (a.duck && window.duckF ? duckF(a.start + (k / (steps - 1)) * aL) : 1);
     const node = off.createBufferSource();
     node.buffer = buf;
     const g = off.createGain();

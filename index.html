@@ -53,6 +53,14 @@
 
     <!-- MEDIA -->
     <section class="panel active" id="p-media">
+      <label class="lbl">Format</label>
+      <div class="chips">
+        <button data-fmt="reels">Reels / TikTok 9:16</button>
+        <button data-fmt="youtube">YouTube 16:9</button>
+        <button data-fmt="square">Square 1:1</button>
+        <button data-fmt="post">Post 4:5</button>
+      </div>
+      <label class="check"><input type="checkbox" id="safeOn"> Show safe zones (preview only)</label>
       <label class="filebtn">+ Add video / image
         <input type="file" id="addMedia" accept="video/*,image/*" multiple hidden>
       </label>
@@ -152,7 +160,15 @@
 
     <!-- TEXT -->
     <section class="panel" id="p-text">
-      <label class="lbl">Motion graphics templates (added at the playhead)</label>
+      <label class="lbl">Ready-made packs</label>
+      <div class="chips tpl">
+        <button data-pack="intro">Intro (at start)</button>
+        <button data-pack="lower">Name lower third</button>
+        <button data-pack="outro">Outro (at end)</button>
+        <button data-pack="hook">Hook text</button>
+        <button data-pack="count">Countdown 3-2-1</button>
+      </div>
+      <label class="lbl">Single templates (added at the playhead)</label>
       <div class="chips tpl">
         <button data-tpl="title">Title card</button>
         <button data-tpl="lower">Lower third</button>
@@ -214,6 +230,20 @@
           <button id="aNow">Start at playhead</button>
           <button id="aDel" class="danger">Remove track</button>
         </div>
+        <label class="check"><input type="checkbox" id="aVoice"> This track is voice</label>
+        <label class="check"><input type="checkbox" id="aDuck"> Lower this track when someone speaks</label>
+        <label class="lbl">Beat sync</label>
+        <button id="aBeats">Find beats in this track</button>
+        <div class="hint" id="aBeatInfo"></div>
+        <div class="grid3">
+          <button id="aPrevBeat">◀ Beat</button>
+          <button id="aNextBeat">Beat ▶</button>
+          <button id="aBeatClear">Clear</button>
+        </div>
+        <div class="grid2">
+          <select id="aBeatEvery"><option value="1">Every beat</option><option value="2">Every 2nd beat</option><option value="4" selected>Every 4th beat</option></select>
+          <button id="aBeatSplit">Cut selected clip on beats</button>
+        </div>
         <label class="lbl">Clean up this track</label>
         <div class="field" data-id="aNr" data-label="Noise reduction strength" data-min="1" data-max="100" data-step="1" data-val="60" data-unit="%"></div>
         <div class="grid2">
@@ -223,6 +253,15 @@
         <button id="aHpf">Remove low rumble</button>
         <div class="hint">Noise reduction learns the hiss from the quietest parts of the track, so it works best on voice with short pauses. Processing happens on your phone.</div>
       </div>
+      <label class="lbl">Voice-over</label>
+      <button id="aRec" class="big">● Record voice-over</button>
+      <label class="check"><input type="checkbox" id="aRecPlay" checked> Play the video while recording (use headphones)</label>
+      <div class="hint" id="aRecInfo"></div>
+      <div class="hint">The recording is placed at the playhead as a new track.</div>
+      <label class="lbl">Auto-ducking (music gets quieter when someone speaks)</label>
+      <div class="hint">Mark a voice track as “voice” and a music track as “lower under voice” in the track settings above.</div>
+      <div class="field" data-id="dAmt" data-label="Lower music by" data-min="0" data-max="95" data-step="1" data-val="70" data-unit="%"></div>
+      <label class="check"><input type="checkbox" id="dVid" checked> Treat video sound as speech too</label>
       <label class="lbl">Sound from a video clip</label>
       <div class="hint">Select a video clip in the timeline, then:</div>
       <div class="grid2">
@@ -274,6 +313,38 @@
       </div>
       <button id="cShiftGo">Apply shift</button>
       <div id="cList"></div>
+      <label class="lbl">Find and replace</label>
+      <div class="grid2">
+        <input type="text" id="cFind" placeholder="Find">
+        <input type="text" id="cRepl" placeholder="Replace with">
+      </div>
+      <div class="grid2">
+        <label class="check"><input type="checkbox" id="cCase"> Match case</label>
+        <button id="cReplGo">Replace all</button>
+      </div>
+      <div class="hint" id="cFindInfo"></div>
+      <label class="lbl">Caption style presets</label>
+      <div class="chips tpl">
+        <button data-cp="classic">Classic</button>
+        <button data-cp="karaoke">Karaoke</button>
+        <button data-cp="reels">Word by word</button>
+        <button data-cp="box">Highlight box</button>
+        <button data-cp="green">Green pop</button>
+        <button data-cp="neon">Neon pink</button>
+        <button data-cp="build">Build up</button>
+        <button data-cp="minimal">Minimal</button>
+      </div>
+      <label class="lbl">Display</label>
+      <select id="cMode">
+        <option value="normal">Whole caption</option>
+        <option value="karaoke">Karaoke (highlight the spoken word)</option>
+        <option value="word">One word at a time</option>
+        <option value="build">Words appear as spoken</option>
+      </select>
+      <div class="grid2">
+        <label class="colorlbl">Highlight color <input type="color" id="cHl" value="#ffd400"></label>
+        <label class="check"><input type="checkbox" id="cHlBox"> Highlight with a box</label>
+      </div>
       <label class="lbl">Caption style</label>
       <div class="field" data-id="cSize" data-label="Size" data-min="20" data-max="110" data-step="1" data-val="46" data-unit=""></div>
       <div class="field" data-id="cY" data-label="Vertical position" data-min="10" data-max="95" data-step="1" data-val="80" data-unit="%"></div>
@@ -393,6 +464,7 @@
 
     <!-- PROJECT -->
     <section class="panel" id="p-project">
+      <button id="pTour">Show the quick tour</button>
       <label class="lbl">Project name</label>
       <input type="text" id="pName" value="Untitled project" placeholder="My project">
       <div class="grid2">
@@ -543,6 +615,19 @@
   </div>
 </div>
 
+<div id="tour">
+  <div class="tcard">
+    <div class="tdots" id="tourDots"></div>
+    <h3 id="tourTitle"></h3>
+    <p id="tourText"></p>
+    <div class="trow">
+      <button id="tourBack">Back</button>
+      <button id="tourSkip">Skip</button>
+      <button id="tourNext" class="accent">Next</button>
+    </div>
+  </div>
+</div>
+
 <div id="busy">
   <div class="box">
     <div id="busyMsg">Exporting… keep this screen open</div>
@@ -559,6 +644,8 @@
 <script src="imgedit.js"></script>
 <script src="audio.js"></script>
 <script src="captions.js"></script>
+<script src="voice.js"></script>
+<script src="quick.js"></script>
 <script src="cutout.js"></script>
 <script src="store.js"></script>
 <script src="config.js"></script>

@@ -9,51 +9,97 @@ const WHISPER_LANG = { auto: null, en: 'english', bn: 'bengali', hi: 'hindi', ar
 const selCap = () => S.caps.find(c => c.id === S.capSel) || null;
 
 /* ---------- rendering ---------- */
+const CAP_PRESETS = {
+  classic:  { mode: 'normal',   size: 46, color: '#ffffff', bgOn: true,  bg: '#000000', y: 0.80, upper: false, anim: 'pop',  bold: true,  hl: '#ffd400', hlBox: false, hlTxt: '#000000' },
+  karaoke:  { mode: 'karaoke',  size: 54, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.72, upper: true,  anim: 'none', bold: true,  hl: '#ffd400', hlBox: false, hlTxt: '#000000' },
+  reels:    { mode: 'word',     size: 84, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.62, upper: true,  anim: 'pop',  bold: true,  hl: '#ffd400', hlBox: false, hlTxt: '#000000' },
+  box:      { mode: 'karaoke',  size: 52, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.74, upper: false, anim: 'none', bold: true,  hl: '#7a5cff', hlBox: true,  hlTxt: '#ffffff' },
+  green:    { mode: 'karaoke',  size: 56, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.72, upper: true,  anim: 'none', bold: true,  hl: '#39ff88', hlBox: false, hlTxt: '#000000' },
+  neon:     { mode: 'karaoke',  size: 54, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.72, upper: true,  anim: 'none', bold: true,  hl: '#ff3dac', hlBox: false, hlTxt: '#000000' },
+  build:    { mode: 'build',    size: 52, color: '#ffffff', bgOn: true,  bg: '#111111', y: 0.76, upper: false, anim: 'none', bold: true,  hl: '#ffd400', hlBox: false, hlTxt: '#000000' },
+  minimal:  { mode: 'normal',   size: 36, color: '#ffffff', bgOn: false, bg: '#000000', y: 0.86, upper: false, anim: 'fade', bold: false, hl: '#ffd400', hlBox: false, hlTxt: '#000000' }
+};
+
+/* Word list of a caption with start/end times. Exact times are used when the speech engine gave them
+   (cp.wt = start of each word, in seconds from the caption start); otherwise time is shared by word length. */
+function capWords(cp) {
+  const ws = cp.text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const n = ws.length, dur = Math.max(0.05, cp.to - cp.from);
+  let st;
+  if (cp.wt && cp.wt.length === n) st = cp.wt.map(x => cp.from + clamp(x, 0, dur));
+  else {
+    const tot = ws.reduce((k, w) => k + w.length + 1, 0);
+    let acc = 0;
+    st = ws.map(w => { const v = cp.from + dur * acc / tot; acc += w.length + 1; return v; });
+  }
+  return ws.map((w, i) => ({ w, s: st[i], e: i < n - 1 ? st[i + 1] : cp.to }));
+}
+
 function drawCaptions(t) {
   const cp = S.caps.find(c => t >= c.from && t < c.to);
   if (!cp || !cp.text) return;
+  const ws = capWords(cp);
+  if (!ws.length) return;
   const st = S.capStyle, W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
-  const px = st.size * F, maxW = W * 0.88;
-  let text = cp.text.replace(/\s+/g, ' ').trim();
-  if (st.upper) text = text.toUpperCase();
+  const px = st.size * F, maxW = W * 0.88, mode = st.mode || 'normal';
+  if (st.upper) ws.forEach(x => { x.w = x.w.toUpperCase(); });
   ctx.save();
   ctx.font = `${st.bold ? 800 : 600} ${px}px ${FONT}`;
-  // wrap into lines
-  const words = text.split(' '), lines = [];
-  let cur = '';
-  for (const w of words) {
-    const test = cur ? cur + ' ' + w : w;
-    if (cur && ctx.measureText(test).width > maxW) { lines.push(cur); cur = w; } else cur = test;
+  const sp = ctx.measureText(' ').width;
+  let cur = ws.findIndex(x => t >= x.s && t < x.e);
+  if (cur < 0) cur = t >= ws[ws.length - 1].s ? ws.length - 1 : 0;
+  // layout (always from the full word list so words do not jump while they appear)
+  const items = (mode === 'word' ? [ws[cur]] : ws).map(x => ({ ...x, idx: ws.indexOf(x), width: ctx.measureText(x.w).width }));
+  const lines = [];
+  let line = { it: [], w: 0 };
+  for (const it of items) {
+    const add = line.it.length ? sp + it.width : it.width;
+    if (line.it.length && line.w + add > maxW) { lines.push(line); line = { it: [it], w: it.width }; }
+    else { line.it.push(it); line.w += add; }
   }
-  if (cur) lines.push(cur);
-  const lh = px * 1.3, pad = px * 0.28;
-  const age = t - cp.from;
+  if (line.it.length) lines.push(line);
+  const lh = px * 1.3, pad = px * 0.28, age = t - cp.from;
   let a = 1, sc = 1;
-  if (st.anim === 'pop') { const p = clamp(age / 0.18, 0, 1); sc = 0.85 + 0.15 * easeOutBack(p); a = clamp(age / 0.08, 0, 1); }
+  if (mode === 'word') { const p = clamp((t - ws[cur].s) / 0.14, 0, 1); sc = 0.8 + 0.2 * easeOutBack(p); }
+  else if (st.anim === 'pop') { const p = clamp(age / 0.18, 0, 1); sc = 0.85 + 0.15 * easeOutBack(p); a = clamp(age / 0.08, 0, 1); }
   else if (st.anim === 'fade') a = clamp(age / 0.2, 0, 1);
   ctx.globalAlpha = a;
   ctx.translate(W / 2, st.y * H);
   ctx.scale(sc, sc);
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   const top = -(lines.length * lh) / 2;
-  lines.forEach((ln, i) => {
-    const y = top + lh * (i + 0.5);
+  lines.forEach((ln, li) => {
+    const y = top + lh * (li + 0.5);
+    let shownW = ln.w;
     if (st.bgOn) {
-      const w = ctx.measureText(ln).width;
       ctx.globalAlpha = a * 0.72;
       ctx.fillStyle = st.bg;
-      rr(-w / 2 - pad, y - lh / 2 + 2, w + pad * 2, lh - 4, px * 0.22);
+      rr(-shownW / 2 - pad, y - lh / 2 + 2, shownW + pad * 2, lh - 4, px * 0.22);
       ctx.fill();
       ctx.globalAlpha = a;
-    } else {
-      ctx.lineWidth = px / 6;
-      ctx.strokeStyle = 'rgba(0,0,0,.9)';
-      ctx.strokeText(ln, 0, y);
     }
-    ctx.fillStyle = st.color;
-    ctx.fillText(ln, 0, y);
+    let x = -ln.w / 2;
+    ln.it.forEach(it => {
+      const visible = mode !== 'build' || it.idx <= cur;
+      const active = mode === 'karaoke' && it.idx === cur;
+      if (visible) {
+        if (active && st.hlBox) {
+          ctx.fillStyle = st.hl;
+          rr(x - pad * 0.5, y - lh / 2 + 3, it.width + pad, lh - 6, px * 0.2);
+          ctx.fill();
+        }
+        if (!st.bgOn && !(active && st.hlBox)) {
+          ctx.lineWidth = px / 6;
+          ctx.strokeStyle = 'rgba(0,0,0,.9)';
+          ctx.strokeText(it.w, x, y);
+        }
+        ctx.fillStyle = active ? (st.hlBox ? st.hlTxt : st.hl) : st.color;
+        ctx.fillText(it.w, x, y);
+      }
+      x += it.width + sp;
+    });
   });
   ctx.restore();
 }
@@ -62,12 +108,24 @@ function drawCaptions(t) {
 function splitSegment(s, max = 64) {
   const text = (s.text || '').replace(/\s+/g, ' ').trim();
   if (!text) return [];
-  const words = text.split(' '), parts = [];
-  let cur = '';
-  for (const w of words) {
-    if (cur && (cur + ' ' + w).length > max) { parts.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+  const words = text.split(' ');
+  // greedy grouping into parts of at most `max` characters
+  const groups = [];
+  let cur = [];
+  for (let i = 0; i < words.length; i++) {
+    const len = cur.reduce((n, k) => n + words[k].length + 1, 0) + words[i].length;
+    if (cur.length && len > max) { groups.push(cur); cur = []; }
+    cur.push(i);
   }
-  if (cur) parts.push(cur);
+  if (cur.length) groups.push(cur);
+  const W = s.words;
+  if (W && W.length === words.length) {          // exact timing from the speech engine
+    return groups.map(g => {
+      const from = W[g[0]].s, to = Math.max(from + 0.2, W[g[g.length - 1]].e);
+      return { from, to, text: g.map(i => words[i]).join(' '), wt: g.map(i => +(W[i].s - from).toFixed(3)) };
+    });
+  }
+  const parts = groups.map(g => g.map(i => words[i]).join(' '));
   const total = parts.reduce((n, p) => n + p.length, 0) || 1, dur = Math.max(0.1, s.end - s.start);
   let t = s.start;
   return parts.map(p => { const d = dur * p.length / total; const r = { from: t, to: t + d, text: p }; t += d; return r; });
@@ -75,7 +133,7 @@ function splitSegment(s, max = 64) {
 function applySegments(segs) {
   touch('caps' + nid());
   const out = [];
-  segs.forEach(s => splitSegment(s).forEach(p => out.push({ id: nid(), from: p.from, to: p.to, text: p.text })));
+  segs.forEach(s => splitSegment(s).forEach(p => out.push({ id: nid(), from: p.from, to: p.to, text: p.text, ...(p.wt ? { wt: p.wt } : {}) })));
   out.sort((a, b) => a.from - b.from);
   out.forEach((c, i) => {
     if (c.to - c.from < 0.5) c.to = c.from + 0.5;
@@ -114,6 +172,7 @@ async function groqTranscribe(mono, lang, key) {
     fd.append('model', 'whisper-large-v3');
     fd.append('response_format', 'verbose_json');
     fd.append('timestamp_granularities[]', 'segment');
+    fd.append('timestamp_granularities[]', 'word');
     fd.append('temperature', '0');
     if (lang && lang !== 'auto') fd.append('language', lang);
     let res;
@@ -128,9 +187,11 @@ async function groqTranscribe(mono, lang, key) {
           : (msg || 'Groq error ' + res.status));
     }
     const j = await res.json();
+    const wl = (j.words || []).map(w => ({ w: String(w.word || '').trim(), s: w.start + i * chunkS, e: w.end + i * chunkS }));
     (j.segments || []).forEach(s => {
       if (s.no_speech_prob > 0.7 && s.avg_logprob < -0.7) return; // skip hallucinated text over silence
-      segs.push({ start: s.start + i * chunkS, end: s.end + i * chunkS, text: (s.text || '').trim() });
+      const st = s.start + i * chunkS, en = s.end + i * chunkS;
+      segs.push({ start: st, end: en, text: (s.text || '').trim(), words: wl.filter(w => w.s >= st - 0.06 && w.s < en + 0.06) });
     });
     if (!j.segments && j.text) segs.push({ start: i * chunkS, end: i * chunkS + part.length / sr, text: j.text.trim() });
   }
@@ -268,6 +329,7 @@ function refreshCaps() {
   setR('cSize', st.size); setR('cY', Math.round(st.y * 100));
   $('cColor').value = st.color; $('cBg').value = st.bg;
   $('cBgOn').checked = st.bgOn; $('cUpper').checked = st.upper; $('cAnim').value = st.anim;
+  $('cMode').value = st.mode || 'normal'; $('cHl').value = st.hl || '#ffd400'; $('cHlBox').checked = !!st.hlBox;
 }
 $('cAdd').onclick = () => {
   touch('cadd' + nid());
@@ -309,3 +371,48 @@ try { $('cKey').value = localStorage.getItem('vided.groq') || ''; } catch (e) { 
 $('cKeyClear').onclick = () => { $('cKey').value = ''; try { localStorage.removeItem('vided.groq'); } catch (e) { } toast('Key removed from this phone'); };
 syncCapEngine();
 refreshCaps();
+
+/* ---------- presets, display mode, highlight ---------- */
+document.querySelectorAll('[data-cp]').forEach(b => {
+  b.onclick = () => {
+    touch('cpreset' + nid());
+    Object.assign(S.capStyle, CAP_PRESETS[b.dataset.cp]);
+    refreshCaps(); markDirty();
+    if (!S.playing) render(true);
+  };
+});
+$('cMode').onchange = styleSet('cmode' + nid(), (s, e) => { s.mode = e.target.value; });
+$('cHl').oninput = styleSet('chl', (s, e) => { s.hl = e.target.value; });
+$('cHlBox').onchange = styleSet('chlbox' + nid(), (s, e) => { s.hlBox = e.target.checked; });
+
+/* ---------- find & replace ---------- */
+const findRe = () => {
+  const f = $('cFind').value;
+  if (!f) return null;
+  return new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $('cCase').checked ? 'g' : 'gi');
+};
+function countMatches() {
+  const re = findRe();
+  const n = re ? S.caps.reduce((k, c) => k + (c.text.match(re) || []).length, 0) : 0;
+  $('cFindInfo').textContent = re ? (n + (n === 1 ? ' match' : ' matches')) : '';
+  return n;
+}
+$('cFind').oninput = countMatches;
+$('cCase').onchange = countMatches;
+$('cReplGo').onclick = () => {
+  const re = findRe();
+  if (!re) return toast('Type the word to find');
+  if (!countMatches()) return toast('No matches');
+  const r = $('cRepl').value;
+  touch('crepl' + nid());
+  let n = 0;
+  S.caps.forEach(c => {
+    const m = c.text.match(re);
+    if (!m) return;
+    n += m.length;
+    c.text = c.text.replace(re, () => r);
+    if (c.wt && c.text.split(/\s+/).filter(Boolean).length !== c.wt.length) delete c.wt;
+  });
+  refreshAll();
+  toast(n + ' replaced');
+};

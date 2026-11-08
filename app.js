@@ -28,7 +28,7 @@ function toast(msg) {
 function markDirty() { if (typeof storeDirty === 'function') storeDirty(); }
 
 /* ---------- state ---------- */
-const defCapStyle = () => ({ size: 46, color: '#ffffff', bgOn: true, bg: '#000000', y: 0.8, upper: false, anim: 'pop', bold: true });
+const defCapStyle = () => ({ size: 46, color: '#ffffff', bgOn: true, bg: '#000000', y: 0.8, upper: false, anim: 'pop', bold: true, mode: 'normal', hl: '#ffd400', hlBox: false, hlTxt: '#000000' });
 const defBg = () => ({ on: false, type: 'chroma', key: '#00ff00', sim: 35, soft: 12, spill: 50, edge: 30, shift: 0, invert: false, fill: 'none', color: '#101820', blur: 20, img: '' });
 const S = {
   clips: [], texts: [], audio: [], caps: [], capStyle: defCapStyle(),
@@ -36,7 +36,8 @@ const S = {
   t: 0, total: 0,
   playing: false, exporting: false, fast: false,
   bg: '#000000', letterbox: false, vignette: false,
-  ratio: '9:16', prev: 540
+  ratio: '9:16', prev: 540, safe: false,
+  duck: { amt: 70, video: true }
 };
 const cv = $('cv'), ctx = cv.getContext('2d');
 const stage = $('stage');
@@ -392,7 +393,7 @@ function syncMedia(t, st) {
       const target = a.in + (t - a.start);
       if (el.paused) { el.currentTime = target; el.play().catch(() => { }); }
       else if (Math.abs(el.currentTime - target) > 0.4) el.currentTime = target;
-      setGain(a, (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, t - a.start, aL));
+      setGain(a, (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, t - a.start, aL) * (a.duck && window.duckF ? duckF(t) : 1));
     } else {
       if (!el.paused) el.pause();
       setGain(a, 0);
@@ -534,6 +535,7 @@ function render(noSync) {
   S.texts.forEach(L => drawText(L, t));
   if (window.drawCaptions) drawCaptions(t);
   if (S.exporting && window.drawWatermark) drawWatermark();
+  if (S.safe && !S.exporting && window.drawSafe) drawSafe();
 }
 
 /* ---------- canvas size ---------- */
@@ -721,6 +723,7 @@ function drawTimeline() {
     tx.fillText('♪ ' + a.name, x + 3, y + 2);
     tx.restore();
     if (a.id === S.asel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 22); }
+    if (window.drawBeats) drawBeats(tx, a, x, y, 24);
     hits.push({ x, y, w, h: 24, kind: 'audio', id: a.id });
   });
 
@@ -1236,6 +1239,7 @@ function refreshAll() {
   if (window.refreshAudio) refreshAudio();
   if (window.refreshCaps) refreshCaps();
   if (window.refreshCutout) refreshCutout();
+  if (window.refreshFormat) refreshFormat();
   $('empty').style.display = S.clips.length ? 'none' : 'flex';
   updateTime(); drawTimeline(); updUR();
 }
