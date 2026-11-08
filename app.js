@@ -28,9 +28,11 @@ function toast(msg) {
 function markDirty() { if (typeof storeDirty === 'function') storeDirty(); }
 
 /* ---------- state ---------- */
+const defCapStyle = () => ({ size: 46, color: '#ffffff', bgOn: true, bg: '#000000', y: 0.8, upper: false, anim: 'pop', bold: true });
+const defBg = () => ({ on: false, type: 'chroma', key: '#00ff00', sim: 35, soft: 12, spill: 50, edge: 30, shift: 0, invert: false, fill: 'none', color: '#101820', blur: 20, img: '' });
 const S = {
-  clips: [], texts: [], audio: [],
-  sel: -1, tsel: -1, asel: -1,
+  clips: [], texts: [], audio: [], caps: [], capStyle: defCapStyle(),
+  sel: -1, tsel: -1, asel: -1, capSel: -1, pick: false, noCut: false,
   t: 0, total: 0,
   playing: false, exporting: false, fast: false,
   bg: '#000000', letterbox: false, vignette: false,
@@ -55,6 +57,8 @@ const selClip = () => S.clips.find(c => c.id === S.sel) || null;
 const selText = () => S.texts.find(t => t.id === S.tsel) || null;
 const selAudio = () => S.audio.find(a => a.id === S.asel) || null;
 const len = c => (c.out - c.in) / c.speed;
+const alen = a => a.out - a.in;
+const fadeF = (fi, fo, lt, L) => Math.min(fi > 0 ? clamp(lt / fi, 0, 1) : 1, fo > 0 ? clamp((L - lt) / fo, 0, 1) : 1);
 
 /* ---------- slider fields (built from data-* attributes) ---------- */
 document.querySelectorAll('.field').forEach(f => {
@@ -83,12 +87,13 @@ function setR(id, val, min, max) {
 /* ---------- undo / redo ---------- */
 const U = [], R = [];
 let lastKey = '', lastTouch = 0;
-function cloneClip(c) { return { ...c, tr: { ...c.tr }, f: { ...c.f }, kf: c.kf.map(k => ({ ...k })) }; }
+function cloneClip(c) { return { ...c, tr: { ...c.tr }, f: { ...c.f }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k })) }; }
 function snap() {
   return {
     clips: S.clips.map(cloneClip),
     texts: S.texts.map(t => ({ ...t })),
     audio: S.audio.map(a => ({ ...a })),
+    caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle },
     sel: S.sel, tsel: S.tsel, asel: S.asel
   };
 }
@@ -97,6 +102,7 @@ function restore(s) {
   S.clips = s.clips.map(cloneClip);
   S.texts = s.texts.map(t => ({ ...t }));
   S.audio = s.audio.map(a => ({ ...a }));
+  S.caps = s.caps.map(c => ({ ...c })); S.capStyle = { ...s.capStyle };
   S.sel = s.sel; S.tsel = s.tsel; S.asel = s.asel;
   compute();
   S.t = clamp(S.t, 0, S.total);
@@ -253,7 +259,7 @@ async function makeClip(file) {
   return {
     id: nid(), name: file.name, type: m.type, el: m.el, dur: m.dur, thumb: m.thumb,
     blob: file, mkey: 'm' + nid(),
-    in: 0, out: m.type === 'image' ? 4 : m.dur, speed: 1, vol: 100,
+    in: 0, out: m.type === 'image' ? 4 : m.dur, speed: 1, vol: 100, fi: 0, fo: 0, bg: defBg(), peaks: null,
     tr: { type: 'none', dur: 0.5 }, f: defFilter(), fit: 'contain',
     sc: 100, px: 0, py: 0, rot: 0, op: 100, kf: [],
     start: 0, end: 0, ov: 0, src: null, gain: null
@@ -285,7 +291,7 @@ async function addAudio(files) {
         el.onloadedmetadata = () => res();
         el.onerror = () => rej(new Error('Cannot open ' + f.name));
       });
-      const a = { id: nid(), type: 'audio', name: f.name, blob: f, mkey: 'm' + nid(), el, dur: isFinite(el.duration) ? el.duration : 600, start: 0, vol: 80, src: null, gain: null };
+      const a = { id: nid(), type: 'audio', name: f.name, blob: f, mkey: 'm' + nid(), el, dur: isFinite(el.duration) ? el.duration : 600, in: 0, out: isFinite(el.duration) ? el.duration : 600, fi: 0, fo: 0, peaks: null, start: 0, vol: 80, src: null, gain: null };
       S.audio.push(a);
       wire(a);
       S.asel = a.id;
@@ -333,6 +339,7 @@ function frameState(t) {
       fx.alpha *= p; fx.au *= p;
     }
     if (next && next.ov > 0 && t >= next.start) transFx(fx, next.tr.type, (t - next.start) / next.ov, 'out');
+    fx.au *= fadeF(c.fi || 0, c.fo || 0, t - c.start, len(c));
     out.push({ c, fx });
   });
   return out;
@@ -378,13 +385,14 @@ function syncMedia(t, st) {
     }
   });
   S.audio.forEach(a => {
-    const active = t >= a.start && t < a.start + a.dur;
+    const aL = alen(a);
+    const active = t >= a.start && t < a.start + aL;
     const el = a.el;
     if (active && S.playing) {
-      const target = t - a.start;
+      const target = a.in + (t - a.start);
       if (el.paused) { el.currentTime = target; el.play().catch(() => { }); }
       else if (Math.abs(el.currentTime - target) > 0.4) el.currentTime = target;
-      setGain(a, a.vol / 100);
+      setGain(a, (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, t - a.start, aL));
     } else {
       if (!el.paused) el.pause();
       setGain(a, 0);
@@ -420,14 +428,22 @@ function drawClip(c, t, fx) {
   if (!sw || !sh) return;
   const base = c.fit === 'cover' ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh);
   const s = base * (p.sc / 100) * fx.scale;
+  let drawEl = el, dw = rw, dh = rh, drot = rot;
+  if (c.bg && c.bg.on && !S.noCut && window.cutoutFrame) {
+    const tmp = cutoutFrame(c, el, rw, rh, rot, sw, sh, t);
+    if (tmp) {
+      if (c.bg.fill !== 'none' && window.drawBackdrop) drawBackdrop(c, fx, W, H, F, el, rw, rh, rot, sw, sh);
+      drawEl = tmp; dw = sw; dh = sh; drot = 0;
+    }
+  }
   ctx.save();
   if (fx.clip !== null) { ctx.beginPath(); ctx.rect(0, 0, W * fx.clip, H); ctx.clip(); }
   ctx.globalAlpha = clamp(fx.alpha * p.op / 100, 0, 1);
   ctx.translate(W / 2 + p.px / 100 * W + fx.dx, H / 2 + p.py / 100 * H);
   ctx.rotate(p.rot * Math.PI / 180);
-  if (rot) ctx.rotate(rot * Math.PI / 180);
+  if (drot) ctx.rotate(drot * Math.PI / 180);
   ctx.filter = filterOf(c.f, F);
-  try { ctx.drawImage(el, -rw * s / 2, -rh * s / 2, rw * s, rh * s); } catch (e) { }
+  try { ctx.drawImage(drawEl, -dw * s / 2, -dh * s / 2, dw * s, dh * s); } catch (e) { }
   ctx.restore();
 }
 function rr(x, y, w, h, r) {
@@ -516,6 +532,8 @@ function render(noSync) {
     ctx.fillRect(0, H * 0.88, W, H * 0.12);
   }
   S.texts.forEach(L => drawText(L, t));
+  if (window.drawCaptions) drawCaptions(t);
+  if (S.exporting && window.drawWatermark) drawWatermark();
 }
 
 /* ---------- canvas size ---------- */
@@ -604,12 +622,15 @@ function lanesOf(items, gs, ge) {
 function drawTimeline() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const tLanes = lanesOf(S.texts, L => L.from, L => L.to);
-  const aLanes = lanesOf(S.audio, a => a.start, a => a.start + a.dur);
+  const cLanes = lanesOf(S.caps, c => c.from, c => c.to);
+  const aLanes = lanesOf(S.audio, a => a.start, a => a.start + alen(a));
   const nT = tLanes.length ? Math.max(...tLanes) + 1 : 0;
+  const nC = cLanes.length ? Math.max(...cLanes) + 1 : 0;
   const nA = aLanes.length ? Math.max(...aLanes) + 1 : 0;
   const yT = RULER + 4 + VH + 6;
-  const yA = yT + nT * 16 + (nT ? 4 : 0);
-  const Hpx = yA + nA * 16 + 10;
+  const yC = yT + nT * 16 + (nT ? 4 : 0);
+  const yA = yC + nC * 16 + (nC ? 4 : 0);
+  const Hpx = yA + nA * 26 + 10;
   const Wpx = Math.max(wrap.clientWidth, Math.ceil(S.total * pps) + PAD * 2 + 80);
   if (tl.width !== Math.round(Wpx * dpr) || tl.height !== Math.round(Hpx * dpr)) {
     tl.width = Math.round(Wpx * dpr);
@@ -648,6 +669,7 @@ function drawTimeline() {
     const g = tx.createLinearGradient(0, y + VH - 18, 0, y + VH);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.75)');
     tx.fillStyle = g; tx.fillRect(x, y + VH - 18, w, 18);
+    if (window.drawPeaks && c.type === 'video' && c.peaks && c.vol > 0) drawPeaks(tx, c.peaks, x, y + VH - 15, w, 12, c.in / c.dur, c.out / c.dur, 'rgba(255,255,255,.5)');
     tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'alphabetic';
     tx.fillText((i + 1) + ' · ' + c.name + (c.speed !== 1 ? ' · ' + c.speed + 'x' : ''), x + 4, y + VH - 5);
     if (c.ov > 0) {
@@ -674,17 +696,32 @@ function drawTimeline() {
     hits.push({ x, y, w, h: 14, kind: 'text', id: L.id });
   });
 
-  // audio tracks
-  S.audio.forEach((a, i) => {
-    const x = PAD + a.start * pps, w = Math.max(6, a.dur * pps), y = yA + aLanes[i] * 16;
-    tx.fillStyle = '#1f8a5b';
+  // caption lane
+  S.caps.forEach((cp, i) => {
+    const x = PAD + cp.from * pps, w = Math.max(5, (cp.to - cp.from) * pps), y = yC + cLanes[i] * 16;
+    tx.fillStyle = '#c98a1b';
     tx.fillRect(x, y, w, 14);
     tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'middle';
     tx.save(); tx.beginPath(); tx.rect(x, y, w, 14); tx.clip();
-    tx.fillText('♪ ' + a.name, x + 3, y + 7);
+    tx.fillText(cp.text, x + 3, y + 7);
     tx.restore();
-    if (a.id === S.asel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 12); }
-    hits.push({ x, y, w, h: 14, kind: 'audio', id: a.id });
+    if (cp.id === S.capSel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 12); }
+    hits.push({ x, y, w, h: 14, kind: 'cap', id: cp.id });
+  });
+
+  // audio tracks (with waveform)
+  S.audio.forEach((a, i) => {
+    const aw = alen(a);
+    const x = PAD + a.start * pps, w = Math.max(6, aw * pps), y = yA + aLanes[i] * 26;
+    tx.fillStyle = '#1f6f4f';
+    tx.fillRect(x, y, w, 24);
+    if (window.drawPeaks && a.peaks) drawPeaks(tx, a.peaks, x, y + 1, w, 22, a.in / a.dur, a.out / a.dur, 'rgba(160,255,210,.85)');
+    tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'top';
+    tx.save(); tx.beginPath(); tx.rect(x, y, w, 24); tx.clip();
+    tx.fillText('♪ ' + a.name, x + 3, y + 2);
+    tx.restore();
+    if (a.id === S.asel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 22); }
+    hits.push({ x, y, w, h: 24, kind: 'audio', id: a.id });
   });
 
   // playhead
@@ -711,6 +748,7 @@ tl.addEventListener('click', e => {
   if (hit) {
     if (hit.kind === 'clip') { S.sel = hit.id; seek(time); }
     else if (hit.kind === 'text') { S.tsel = hit.id; openTab('text'); }
+    else if (hit.kind === 'cap') { S.capSel = hit.id; openTab('captions'); }
     else { S.asel = hit.id; openTab('audio'); }
     refreshAll();
   } else seek(time);
@@ -1032,39 +1070,7 @@ $('tNow').onclick = () => {
 
 /* ---------- Audio tab ---------- */
 $('addAudio').onchange = e => { addAudio([...e.target.files]); e.target.value = ''; };
-function refreshAudio() {
-  const sel = $('aSel');
-  sel.innerHTML = '';
-  S.audio.forEach((a, i) => {
-    const o = document.createElement('option');
-    o.value = a.id; o.textContent = (i + 1) + '. ' + a.name;
-    sel.appendChild(o);
-  });
-  sel.style.display = S.audio.length ? '' : 'none';
-  const a = selAudio();
-  $('n-audio').classList.toggle('off', !a);
-  if (!a) return;
-  sel.value = a.id;
-  setR('aVol', a.vol);
-  $('aStart').value = a.start;
-}
-$('aSel').onchange = e => { S.asel = +e.target.value; refreshAudio(); drawTimeline(); };
-$('aVol').oninput = e => { const a = selAudio(); if (!a) return; touch('avol'); a.vol = +e.target.value; };
-$('aStart').oninput = e => { const a = selAudio(); if (!a) return; touch('astart'); a.start = Math.max(0, +e.target.value || 0); drawTimeline(); };
-$('aNow').onclick = () => {
-  const a = selAudio(); if (!a) return;
-  touch('anow' + nid());
-  a.start = +S.t.toFixed(1);
-  refreshAudio(); drawTimeline();
-};
-$('aDel').onclick = () => {
-  const a = selAudio(); if (!a) return;
-  touch('adel' + nid());
-  a.el.pause();
-  S.audio = S.audio.filter(x => x.id !== a.id);
-  S.asel = S.audio.length ? S.audio[0].id : -1;
-  refreshAll();
-};
+// The rest of the Audio tab (waveform, trim, fades, noise reduction) lives in audio.js
 
 /* ---------- Export tab ---------- */
 const TYPES = window.MediaRecorder ? [
@@ -1180,6 +1186,7 @@ function pickClip() {
 cv.addEventListener('pointerdown', e => {
   if (S.exporting) return;
   const [x, y] = cpt(e);
+  if (S.pick && window.pickKeyColor) { pickKeyColor(x, y); return; }
   for (let i = S.texts.length - 1; i >= 0; i--) {
     const L = S.texts[i], b = L._box;
     if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
@@ -1225,7 +1232,10 @@ cv.addEventListener('pointercancel', endDrag);
 
 /* ---------- refresh everything ---------- */
 function refreshAll() {
-  refreshMedia(); refreshAdjust(); refreshAnim(); refreshText(); refreshAudio();
+  refreshMedia(); refreshAdjust(); refreshAnim(); refreshText();
+  if (window.refreshAudio) refreshAudio();
+  if (window.refreshCaps) refreshCaps();
+  if (window.refreshCutout) refreshCutout();
   $('empty').style.display = S.clips.length ? 'none' : 'flex';
   updateTime(); drawTimeline(); updUR();
 }

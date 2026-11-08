@@ -13,7 +13,7 @@
 <div id="app">
 
   <header>
-    <div class="logo">Vided</div>
+    <div class="logo">Vided <span id="proBadge" hidden>PRO</span></div>
     <div class="hbtns">
       <button id="undo" class="ico" title="Undo">&#8630;</button>
       <button id="redo" class="ico" title="Redo">&#8631;</button>
@@ -42,8 +42,11 @@
     <button data-tab="animate">Animate</button>
     <button data-tab="text">Text</button>
     <button data-tab="audio">Audio</button>
+    <button data-tab="captions">Captions</button>
+    <button data-tab="cutout">Cutout</button>
     <button data-tab="export">Export</button>
     <button data-tab="project">Project</button>
+    <button data-tab="account">Account</button>
   </nav>
 
   <main id="panels">
@@ -72,6 +75,10 @@
         <div class="field" data-id="trOut" data-label="Trim end" data-min="0.1" data-max="10" data-step="0.05" data-val="10" data-unit="s"></div>
         <div class="field" data-id="spd" data-label="Speed" data-min="25" data-max="400" data-step="5" data-val="100" data-unit="%"></div>
         <div class="field" data-id="cvol" data-label="Clip volume" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
+        <div id="n-clipfade">
+          <div class="field" data-id="cfi" data-label="Sound fade in" data-min="0" data-max="5" data-step="0.1" data-val="0" data-unit="s"></div>
+          <div class="field" data-id="cfo" data-label="Sound fade out" data-min="0" data-max="5" data-step="0.1" data-val="0" data-unit="s"></div>
+        </div>
         <label class="lbl">Transition into this clip</label>
         <select id="trType">
           <option value="none">None (hard cut)</option>
@@ -195,13 +202,133 @@
       </label>
       <select id="aSel"></select>
       <div class="needsel" id="n-audio">
+        <canvas id="aWave" height="84"></canvas>
+        <div class="hint">Tap the waveform to move the playhead. Drag the sliders to trim.</div>
         <div class="field" data-id="aVol" data-label="Volume" data-min="0" data-max="200" data-step="1" data-val="80" data-unit="%"></div>
+        <div class="field" data-id="aIn" data-label="Trim start" data-min="0" data-max="10" data-step="0.05" data-val="0" data-unit="s"></div>
+        <div class="field" data-id="aOut" data-label="Trim end" data-min="0.1" data-max="10" data-step="0.05" data-val="10" data-unit="s"></div>
+        <div class="field" data-id="aFi" data-label="Fade in" data-min="0" data-max="10" data-step="0.1" data-val="0" data-unit="s"></div>
+        <div class="field" data-id="aFo" data-label="Fade out" data-min="0" data-max="10" data-step="0.1" data-val="0" data-unit="s"></div>
         <label class="lbl">Starts at (s)<input type="number" id="aStart" min="0" step="0.1" value="0"></label>
         <div class="grid2">
           <button id="aNow">Start at playhead</button>
           <button id="aDel" class="danger">Remove track</button>
         </div>
-        <div class="hint">Audio that runs past the end of the video is cut off. Use “Clip volume” in the Media tab to change the sound of a video clip.</div>
+        <label class="lbl">Clean up this track</label>
+        <div class="field" data-id="aNr" data-label="Noise reduction strength" data-min="1" data-max="100" data-step="1" data-val="60" data-unit="%"></div>
+        <div class="grid2">
+          <button id="aDenoise" class="accent">Reduce noise</button>
+          <button id="aNorm">Normalize volume</button>
+        </div>
+        <button id="aHpf">Remove low rumble</button>
+        <div class="hint">Noise reduction learns the hiss from the quietest parts of the track, so it works best on voice with short pauses. Processing happens on your phone.</div>
+      </div>
+      <label class="lbl">Sound from a video clip</label>
+      <div class="hint">Select a video clip in the timeline, then:</div>
+      <div class="grid2">
+        <button id="aExtract">Extract audio to a track</button>
+        <label class="check"><input type="checkbox" id="aMute" checked> Mute the clip</label>
+      </div>
+    </section>
+
+    <!-- CAPTIONS -->
+    <section class="panel" id="p-captions">
+      <label class="lbl">Language spoken in the video</label>
+      <select id="cLang">
+        <option value="auto">Auto-detect</option>
+        <option value="en">English</option>
+        <option value="bn">Bengali (বাংলা)</option>
+        <option value="hi">Hindi</option>
+        <option value="ur">Urdu</option>
+        <option value="ar">Arabic</option>
+        <option value="es">Spanish</option>
+      </select>
+      <label class="lbl">Engine</label>
+      <select id="cEngine">
+        <option value="groq">Cloud: Groq Whisper (best, free key)</option>
+        <option value="local">On this phone (private, slower)</option>
+      </select>
+      <div id="cGroqBox">
+        <input type="password" id="cKey" placeholder="Groq API key (gsk_…)" autocomplete="off">
+        <div class="hint">Get a free key at console.groq.com. It is kept only on this phone and your audio is sent to Groq for transcription. Best accuracy for Bengali.</div>
+        <button id="cKeyClear">Forget key</button>
+      </div>
+      <div id="cLocalBox">
+        <label class="lbl">Model size</label>
+        <select id="cModel">
+          <option value="whisper-tiny">Tiny (about 40 MB, fastest, low accuracy)</option>
+          <option value="whisper-base" selected>Base (about 75 MB)</option>
+          <option value="whisper-small">Small (about 250 MB, slow, better)</option>
+        </select>
+        <div class="hint">Downloads once, then works offline. Bengali is much more accurate with the cloud engine.</div>
+      </div>
+      <button id="cGen" class="big green">Create captions</button>
+      <div class="grid3">
+        <button id="cAdd">+ Add</button>
+        <label class="filebtn">Import SRT<input type="file" id="cSrtIn" accept=".srt,text/plain" hidden></label>
+        <button id="cSrtOut">Export SRT</button>
+      </div>
+      <div class="grid2">
+        <button id="cClear" class="danger">Delete all</button>
+        <label class="lbl">Shift all (s)<input type="number" id="cShift" step="0.1" value="0"></label>
+      </div>
+      <button id="cShiftGo">Apply shift</button>
+      <div id="cList"></div>
+      <label class="lbl">Caption style</label>
+      <div class="field" data-id="cSize" data-label="Size" data-min="20" data-max="110" data-step="1" data-val="46" data-unit=""></div>
+      <div class="field" data-id="cY" data-label="Vertical position" data-min="10" data-max="95" data-step="1" data-val="80" data-unit="%"></div>
+      <div class="grid2">
+        <label class="colorlbl">Text color <input type="color" id="cColor" value="#ffffff"></label>
+        <label class="colorlbl">Box color <input type="color" id="cBg" value="#000000"></label>
+      </div>
+      <div class="grid2">
+        <label class="check"><input type="checkbox" id="cBgOn" checked> Background box</label>
+        <label class="check"><input type="checkbox" id="cUpper"> UPPERCASE</label>
+      </div>
+      <select id="cAnim">
+        <option value="none">No animation</option>
+        <option value="fade">Fade</option>
+        <option value="pop" selected>Pop</option>
+      </select>
+      <div class="hint">Captions are drawn on the video and included in every export. Edit text and times in the list above.</div>
+    </section>
+
+    <!-- CUTOUT -->
+    <section class="panel" id="p-cutout">
+      <div id="bgInfo" class="hint">Select a video or image clip on the timeline.</div>
+      <div id="n-cutout">
+        <label class="check"><input type="checkbox" id="bgOn"> Remove background</label>
+        <label class="lbl">Method</label>
+        <select id="bgType">
+          <option value="chroma">Color key (green screen or plain wall)</option>
+          <option value="ai">AI person cutout (no green screen needed)</option>
+        </select>
+        <div id="bgChromaOnly">
+          <div class="grid2">
+            <label class="colorlbl">Color to remove <input type="color" id="bgKey" value="#00ff00"></label>
+            <button id="bgPick">Pick from video</button>
+          </div>
+          <button id="bgAuto">Auto-detect from corners</button>
+          <div class="field" data-id="bgSim" data-label="Tolerance" data-min="0" data-max="100" data-step="1" data-val="35" data-unit="%"></div>
+          <div class="field" data-id="bgSpill" data-label="Remove color spill" data-min="0" data-max="100" data-step="1" data-val="50" data-unit="%"></div>
+        </div>
+        <div id="bgAiBox">
+          <div class="hint" id="bgAiStatus"></div>
+        </div>
+        <div class="field" data-id="bgSoft" data-label="Edge softness" data-min="0" data-max="50" data-step="1" data-val="12" data-unit="%"></div>
+        <div class="field" data-id="bgShift" data-label="Grow / shrink edge" data-min="-50" data-max="50" data-step="1" data-val="0" data-unit="%"></div>
+        <label class="check"><input type="checkbox" id="bgInv"> Invert (keep the background instead)</label>
+        <label class="lbl">Behind the subject</label>
+        <select id="bgFill">
+          <option value="none">Transparent (shows the layer below)</option>
+          <option value="color">Solid color</option>
+          <option value="blur">Blurred copy of the video</option>
+          <option value="image">Picture</option>
+        </select>
+        <div id="bgColorBox"><label class="colorlbl">Fill color <input type="color" id="bgColor" value="#101820"></label></div>
+        <div id="bgBlurBox"><div class="field" data-id="bgBlur" data-label="Blur amount" data-min="2" data-max="60" data-step="1" data-val="20" data-unit="px"></div></div>
+        <div id="bgImgBox"><label class="filebtn">Choose picture<input type="file" id="bgImg" accept="image/*" hidden></label></div>
+        <div class="hint">Tip: for a transparent result, put another clip on the timeline under this one’s time range (overlap them) or pick a fill. Exported videos include the cutout.</div>
       </div>
     </section>
 
@@ -226,6 +353,7 @@
         <option value="720" selected>720p HD</option>
         <option value="1080">1080p Full HD</option>
       </select>
+      <div class="hint" id="xPlanNote"></div>
       <label class="lbl">Frame rate</label>
       <select id="xFps">
         <option value="24">24 fps</option>
@@ -275,6 +403,47 @@
       <label class="lbl">Saved projects</label>
       <div id="pList"></div>
       <div class="hint" id="pStorage"></div>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section class="panel" id="p-account">
+      <div id="acOff" class="hint">Accounts are not set up in this copy of Vided, so every feature is unlocked. To turn on sign-in, plans and cloud backup, follow SETUP-ACCOUNTS.md.</div>
+
+      <div id="acOut">
+        <label class="lbl">Sign in or create an account</label>
+        <div id="acStep1">
+          <input type="email" id="acEmail" placeholder="you@example.com" autocomplete="email">
+          <button id="acSend" class="accent">Email me a sign-in code</button>
+        </div>
+        <div id="acStep2" style="display:none">
+          <div class="hint" id="acSent"></div>
+          <input type="text" id="acCode" placeholder="Code from the email" inputmode="numeric" autocomplete="one-time-code">
+          <div class="grid2">
+            <button id="acVerify" class="accent">Sign in</button>
+            <button id="acBack">Change email</button>
+          </div>
+        </div>
+        <div class="hint">No password needed. Signing in lets you use a Pro plan on any device and back up your projects.</div>
+      </div>
+
+      <div id="acIn">
+        <div class="acCard">
+          <div><b id="acWho"></b></div>
+          <div id="acPlan" class="hint"></div>
+        </div>
+        <button id="acUpgrade" class="big green">Upgrade to Pro</button>
+        <label class="lbl">Have a Pro code?</label>
+        <div class="grid2">
+          <input type="text" id="acRedeemCode" placeholder="Code" autocapitalize="characters" autocomplete="off">
+          <button id="acRedeem">Redeem</button>
+        </div>
+        <div class="hint" id="acPerks"></div>
+        <label class="lbl">Cloud backup (Pro)</label>
+        <button id="acBackup">Back up current project</button>
+        <div id="acList"></div>
+        <div class="hint">Backups include your video, audio and image files, so restoring works on any phone. Large projects take a while on mobile data.</div>
+        <button id="acOutBtn" class="danger">Sign out</button>
+      </div>
     </section>
 
   </main>
@@ -371,7 +540,12 @@
 <script src="app.js"></script>
 <script src="export.js"></script>
 <script src="imgedit.js"></script>
+<script src="audio.js"></script>
+<script src="captions.js"></script>
+<script src="cutout.js"></script>
 <script src="store.js"></script>
+<script src="config.js"></script>
+<script src="account.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function () {});

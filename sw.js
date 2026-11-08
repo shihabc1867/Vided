@@ -1,7 +1,7 @@
 // Vided service worker: works offline, and refreshes files in the background.
-// If something looks stale after an update, bump the version below (v2 -> v3).
-const CACHE = 'vided-v3';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'mux.js', 'demux.js', 'export.js', 'imgedit.js', 'store.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+// If something looks stale after an update, bump the version below (v5 -> v6).
+const CACHE = 'vided-v5';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'mux.js', 'demux.js', 'export.js', 'imgedit.js', 'audio.js', 'captions.js', 'cutout.js', 'whisper-worker.js', 'store.js', 'config.js', 'account.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
