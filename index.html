@@ -23,7 +23,7 @@
 
   <div id="stage">
     <canvas id="cv"></canvas>
-    <div id="empty">Open the <b>Media</b> tab and tap<br>“Add video / image” to start</div>
+    <div id="empty"><div>Open the <b>Media</b> tab and tap<br>“Add video / image” to start</div></div>
   </div>
 
   <div class="transport">
@@ -407,6 +407,7 @@
 
     <!-- ACCOUNT -->
     <section class="panel" id="p-account">
+      <button id="acInstall" class="big accent" style="display:none">Install Vided on this phone</button>
       <div id="acOff" class="hint">Accounts are not set up in this copy of Vided, so every feature is unlocked. To turn on sign-in, plans and cloud backup, follow SETUP-ACCOUNTS.md.</div>
 
       <div id="acOut">
@@ -432,6 +433,22 @@
           <div id="acPlan" class="hint"></div>
         </div>
         <button id="acUpgrade" class="big green">Upgrade to Pro</button>
+        <div id="acPay" class="acCard" style="display:none">
+          <label class="lbl">Pay with</label>
+          <select id="acPayMethod"></select>
+          <div class="acNum"><b id="acPayNum"></b><button id="acPayCopy">Copy number</button></div>
+          <div class="hint" id="acPayHow"></div>
+          <input type="text" id="acPayTrx" placeholder="Transaction ID (TrxID)" autocomplete="off" autocapitalize="characters">
+          <input type="tel" id="acPaySender" placeholder="Number you paid from (01XXXXXXXXX)" autocomplete="off">
+          <button id="acPaySubmit" class="accent">I have paid, submit</button>
+          <div id="acPayList"></div>
+          <button id="acPayRefresh">Check status</button>
+        </div>
+        <div id="acAdmin" style="display:none">
+          <label class="lbl">Pending payments (admin)</label>
+          <div id="acAdminList"></div>
+          <button id="acAdminRefresh">Refresh</button>
+        </div>
         <label class="lbl">Have a Pro code?</label>
         <div class="grid2">
           <input type="text" id="acRedeemCode" placeholder="Code" autocapitalize="characters" autocomplete="off">
@@ -545,9 +562,13 @@
 <script src="cutout.js"></script>
 <script src="store.js"></script>
 <script src="config.js"></script>
+<script src="native.js"></script>
 <script src="account.js"></script>
 <script>
-if ('serviceWorker' in navigator) {
+if (window.Capacitor) {
+  // Inside the Android app the files ship with the APK, so no service worker is needed
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+} else if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function () {});
 }
 </script>

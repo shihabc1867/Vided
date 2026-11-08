@@ -11,7 +11,16 @@
 ## ২. config.js ভরুন
 `config.js` খুলে `supabaseUrl` ও `supabaseKey` বসান। `upgradeUrl` এ পেমেন্টের লিংক বা যোগাযোগের লিংক (WhatsApp/Messenger/বিকাশ নির্দেশনার পেজ) দিন। **service_role key কখনো এখানে বসাবেন না।**
 
-## ৩. Pro দেওয়ার উপায়
+## ৩. বিকাশ/নগদ পেমেন্ট (অ্যাপের ভেতরেই)
+1. `config.js` এ `pay` অংশে `price` (যেমন `'৳199 for 30 days'`), আপনার `bkash` ও `nagad` পার্সোনাল নম্বর বসান (যেটা দেবেন না সেটা খালি রাখুন)।
+2. `supabase-setup.sql` আবার পুরোটা Run করুন (নতুন অংশ যোগ হয়েছে, আবার চালালে সমস্যা নেই)।
+3. অ্যাপে একবার নিজের ইমেইলে সাইন-ইন করে SQL Editor এ চালান: `update public.profiles set is_admin = true where email = 'আপনার@ইমেইল';`
+4. এখন ইউজার Account ট্যাবে Upgrade চাপলে নম্বর দেখবে, টাকা পাঠিয়ে TrxID ও যে নম্বর থেকে পাঠিয়েছে সেটা জমা দেবে।
+5. আপনি অ্যাপের Account ট্যাবে "Pending payments" দেখতে পাবেন। নিজের বিকাশ/নগদ অ্যাপে TrxID ও টাকা মিলিয়ে **Approve** চাপলেই ৩০ দিনের Pro চালু। ভুল হলে Reject।
+- একই TrxID দুইবার জমা নেওয়া হয় না। একজন ইউজার একসাথে ৩টির বেশি পেন্ডিং রাখতে পারে না।
+- বিকাশ/নগদের কোনো API ব্যবহার হচ্ছে না, তাই আপনাকে নিজে মিলিয়ে অ্যাপ্রুভ করতে হবে। ইউজার বাড়লে পরে মার্চেন্ট API (bKash PGW) যোগ করা যাবে।
+
+## ৪. Pro দেওয়ার অন্য উপায়
 - **কোড দিয়ে (সবচেয়ে সহজ, বিকাশ/নগদের সাথে মানায়):** ইউজার টাকা পাঠালে তাকে একটি কোড দিন। SQL Editor এ চালান:
   `insert into public.codes (code, days) select upper(substr(md5(random()::text),1,10)), 30 from generate_series(1,10);`
   `select code, days from public.codes where used_by is null;`

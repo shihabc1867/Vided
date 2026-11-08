@@ -223,11 +223,7 @@ function parseSRT(txt) {
 }
 $('cSrtOut').onclick = () => {
   if (!S.caps.length) return toast('No captions to export');
-  const url = URL.createObjectURL(new Blob([toSRT(S.caps)], { type: 'text/plain;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = 'captions.srt';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  downloadBlob(new Blob([toSRT(S.caps)], { type: 'text/plain;charset=utf-8' }), 'captions.srt');
 };
 $('cSrtIn').onchange = async e => {
   const f = e.target.files[0];

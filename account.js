@@ -6,8 +6,8 @@
    - Free plan: export capped at CFG.freeMaxRes and a small watermark. Pro: no limits, plus cloud backup.
    - If supabaseUrl is empty, accounts are off and everything is unlocked. */
 
-const CFG = Object.assign({ supabaseUrl: '', supabaseKey: '', upgradeUrl: '', freeMaxRes: 720, watermark: 'Made with Vided', proPerks: [] }, window.VIDED_CONFIG || {});
-const ACC = { on: !!(CFG.supabaseUrl && CFG.supabaseKey), session: null, plan: 'free', until: null, email: '', pendingEmail: '' };
+const CFG = Object.assign({ pay: {}, supabaseUrl: '', supabaseKey: '', upgradeUrl: '', freeMaxRes: 720, watermark: 'Made with Vided', proPerks: [] }, window.VIDED_CONFIG || {});
+const ACC = { admin: false, on: !!(CFG.supabaseUrl && CFG.supabaseKey), session: null, plan: 'free', until: null, email: '', pendingEmail: '' };
 const SB = CFG.supabaseUrl.replace(/\/+$/, '');
 const SKEY = 'vided.session';
 
@@ -48,7 +48,7 @@ function saveSession(j) {
   try { localStorage.setItem(SKEY, JSON.stringify(ACC.session)); } catch (e) { }
 }
 function clearSession() {
-  ACC.session = null; ACC.plan = 'free'; ACC.until = null; ACC.email = '';
+  ACC.session = null; ACC.plan = 'free'; ACC.until = null; ACC.email = ''; ACC.admin = false;
   try { localStorage.removeItem(SKEY); } catch (e) { }
 }
 let refreshing = null;
@@ -75,6 +75,7 @@ async function loadPlan() {
     const p = rows && rows[0];
     ACC.plan = p ? p.plan : 'free';
     ACC.until = p ? p.plan_until : null;
+    ACC.admin = !!(p && p.is_admin);
   } catch (e) { /* offline: keep what we have */ }
   try { localStorage.setItem('vided.plan', JSON.stringify({ plan: ACC.plan, until: ACC.until, uid: ACC.session.user.id })); } catch (e) { }
 }
@@ -124,6 +125,10 @@ function refreshAccount() {
     ? 'Pro plan' + (ACC.until ? ' · active until ' + new Date(ACC.until).toLocaleDateString() : '')
     : (ACC.plan === 'pro' ? 'Your Pro plan has expired.' : 'Free plan');
   show('acUpgrade', !pro);
+  if (pro) show('acPay', false);
+  show('acAdmin', ACC.admin);
+  if (ACC.admin) refreshAdmin();
+  if (!pro && payMethods().length) refreshMyPayments();
   $('acPerks').textContent = CFG.proPerks.length ? 'Pro includes: ' + CFG.proPerks.join(' · ') : '';
   $('acBackup').disabled = !pro;
   if (pro) refreshBackups(); else $('acList').innerHTML = '<div class="hint">Cloud backup is a Pro feature.</div>';
@@ -162,7 +167,10 @@ $('acOutBtn').onclick = async () => {
   applyPlanUI();
   toast('Signed out');
 };
+const PAY = CFG.pay || {};
+const payMethods = () => [['bkash', 'bKash', PAY.bkash], ['nagad', 'Nagad', PAY.nagad]].filter(m => m[2]);
 $('acUpgrade').onclick = () => {
+  if (payMethods().length) { show('acPay', $('acPay').style.display === 'none'); refreshPay(); return; }
   if (!CFG.upgradeUrl) return toast('Ask the app owner for a Pro code, then enter it below');
   const u = CFG.upgradeUrl + (CFG.upgradeUrl.includes('?') ? '&' : '?') + 'email=' + encodeURIComponent(ACC.email);
   window.open(u, '_blank', 'noopener');
@@ -329,3 +337,83 @@ $('acBackup').onclick = backupProject;
   if (ACC.on && ACC.session) { await loadPlan(); applyPlanUI(); }
 })();
 document.querySelector('#tabs [data-tab=account]').addEventListener('click', () => { if (ACC.on && ACC.session) loadPlan().then(applyPlanUI); });
+
+/* ---------- bKash / Nagad manual payment ---------- */
+function refreshPay() {
+  const ms = payMethods();
+  const sel = $('acPayMethod');
+  if (sel.options.length !== ms.length) { sel.innerHTML = ''; ms.forEach(m => sel.add(new Option(m[1], m[0]))); }
+  const m = ms.find(x => x[0] === sel.value) || ms[0];
+  $('acPayHow').textContent = `1. Open ${m[1]} and choose “Send Money”. 2. Send ${PAY.price || 'the Pro price'} to ${m[2]}. 3. Copy the Transaction ID (TrxID) from the confirmation message and enter it below with the number you paid from. We activate Pro in ${PAY.hours || 'a few hours'}.`;
+  $('acPayNum').textContent = m[2];
+  refreshMyPayments();
+}
+$('acPayMethod').onchange = refreshPay;
+$('acPayCopy').onclick = async () => { try { await navigator.clipboard.writeText($('acPayNum').textContent); toast('Number copied'); } catch (e) { toast('Copy failed'); } };
+$('acPaySubmit').onclick = async () => {
+  const trx = $('acPayTrx').value.trim(), sender = $('acPaySender').value.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9]{6,20}$/.test(trx)) return toast('Enter the Transaction ID from the payment message');
+  if (!/^01\d{9}$/.test(sender)) return toast('Enter the 11-digit number you paid from (01XXXXXXXXX)');
+  $('acPaySubmit').disabled = true;
+  try {
+    await sbJson('/rest/v1/rpc/submit_payment', jsonOpt('POST', { p_method: $('acPayMethod').value, p_trx: trx, p_sender: sender }));
+    $('acPayTrx').value = '';
+    toast('Payment submitted. We will activate Pro soon.');
+    refreshMyPayments();
+  } catch (e) { toast(e.message); }
+  $('acPaySubmit').disabled = false;
+};
+async function refreshMyPayments() {
+  const box = $('acPayList');
+  if (!ACC.session) return;
+  try {
+    const rows = await sbJson('/rest/v1/payment_requests?select=id,method,trx_id,status,created_at&order=created_at.desc&limit=5');
+    box.innerHTML = '';
+    (rows || []).forEach(r => {
+      const d = document.createElement('div');
+      d.className = 'hint';
+      d.textContent = `${r.method === 'nagad' ? 'Nagad' : 'bKash'} ${r.trx_id} · ${new Date(r.created_at).toLocaleDateString()} · ` +
+        (r.status === 'approved' ? 'Approved ✓' : r.status === 'rejected' ? 'Rejected. Check the Transaction ID and contact us.' : 'Waiting for approval');
+      box.appendChild(d);
+    });
+  } catch (e) { }
+}
+$('acPayRefresh').onclick = async () => { await loadPlan(); applyPlanUI(); refreshMyPayments(); toast(isPro() ? 'Pro is active' : 'Not active yet'); };
+
+/* ---------- admin: approve payments ---------- */
+async function refreshAdmin() {
+  const box = $('acAdminList');
+  try {
+    const rows = await sbJson('/rest/v1/payment_requests?select=id,email,method,trx_id,sender,days,created_at&status=eq.pending&order=created_at.asc&limit=50');
+    box.innerHTML = '';
+    if (!rows.length) box.innerHTML = '<div class="hint">No pending payments.</div>';
+    rows.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'brow';
+      const info = document.createElement('div');
+      info.className = 'pinfo';
+      info.innerHTML = '<b></b><span></span>';
+      info.firstChild.textContent = `${r.method === 'nagad' ? 'Nagad' : 'bKash'} · ${r.trx_id}`;
+      info.lastChild.textContent = `${r.email} · from ${r.sender} · ${r.days} days`;
+      const ok = document.createElement('button'); ok.textContent = 'Approve'; ok.className = 'accent';
+      const no = document.createElement('button'); no.textContent = 'Reject'; no.className = 'danger';
+      const act = (fn, msg) => async () => {
+        ok.disabled = no.disabled = true;
+        try { await sbJson('/rest/v1/rpc/' + fn, jsonOpt('POST', { p_id: r.id })); toast(msg); } catch (e) { toast(e.message); }
+        refreshAdmin();
+      };
+      ok.onclick = act('approve_payment', 'Approved. Pro activated.');
+      no.onclick = act('reject_payment', 'Rejected');
+      row.append(info, ok, no);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = 'Could not load: ' + e.message; }
+}
+$('acAdminRefresh').onclick = refreshAdmin;
+
+/* ---------- install prompt (web version only) ---------- */
+let installEv = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; if (!window.Capacitor) show('acInstall', true); });
+$('acInstall').onclick = async () => { if (!installEv) return; installEv.prompt(); await installEv.userChoice.catch(() => { }); installEv = null; show('acInstall', false); };
+show('acInstall', false);
+show('acPay', false);

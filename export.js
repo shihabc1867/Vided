@@ -34,6 +34,9 @@ async function doExport() {
   if (S.exporting) return;
   if (!S.clips.length) return toast('Add a clip first');
   pause();
+  if (window.gateExport) gateExport();
+  try { if (window.prepareCutouts) { busyMsg('Loading AI cutout…'); $('busy').classList.add('on'); await prepareCutouts(); $('busy').classList.remove('on'); } }
+  catch (e) { $('busy').classList.remove('on'); return toast(e.message); }
   if ($('xEngine').value === 'fast' && FAST.ok) {
     const r = await runFast();
     if (r !== 'fallback') return;
@@ -91,8 +94,7 @@ function clipAudioFactor(c, t) {
   const e = frameState(t).find(x => x.c === c);
   return e ? e.fx.au : 0;
 }
-async function mixAudio(total) {
-  const sr = 48000;
+async function mixAudio(total, sr = 48000) {
   const dctx = new OfflineAudioContext(2, sr, sr);
   const cache = new Map();
   const decode = async (blob, key) => {
@@ -131,13 +133,17 @@ async function mixAudio(total) {
     if (!a.blob || a.start >= total) continue;
     const buf = await decode(a.blob, a.mkey);
     if (!buf) continue;
+    const aL = Math.min(alen(a), Math.max(0.01, buf.duration - a.in));
+    const steps = Math.max(2, Math.ceil(aL * 100) + 1);
+    const curve = new Float32Array(steps);
+    for (let k = 0; k < steps; k++) curve[k] = (a.vol / 100) * fadeF(a.fi || 0, a.fo || 0, (k / (steps - 1)) * aL, aL);
     const node = off.createBufferSource();
     node.buffer = buf;
     const g = off.createGain();
-    g.gain.value = a.vol / 100;
+    g.gain.setValueCurveAtTime(curve, a.start, aL);
     node.connect(g); g.connect(off.destination);
-    node.start(a.start, 0);
-    node.stop(Math.min(total, a.start + buf.duration));
+    node.start(a.start, a.in, aL);
+    node.stop(Math.min(total, a.start + aL));
     nodes++;
     if (cancelled) return null;
   }
