@@ -196,6 +196,11 @@ function compute() {
 /* ---------- keyframes / transform ---------- */
 const PK = ['sc', 'px', 'py', 'rot', 'op'];
 function pickP(o) { return { sc: o.sc, px: o.px, py: o.py, rot: o.rot, op: o.op }; }
+const KEASE = {
+  linear: p => p, in: p => p * p * p, out: p => 1 - Math.pow(1 - p, 3), hold: p => (p < 1 ? 0 : 1),
+  bounce: p => { const n = 7.5625, d = 2.75; if (p < 1 / d) return n * p * p; if (p < 2 / d) return n * (p -= 1.5 / d) * p + 0.75; if (p < 2.5 / d) return n * (p -= 2.25 / d) * p + 0.9375; return n * (p -= 2.625 / d) * p + 0.984375; },
+  back: easeOutBack
+};
 function evalProps(c, lt) {
   const k = c.kf;
   if (!k.length) return pickP(c);
@@ -203,7 +208,7 @@ function evalProps(c, lt) {
   if (lt >= k[k.length - 1].t) return pickP(k[k.length - 1]);
   for (let i = 0; i < k.length - 1; i++) {
     if (lt < k[i + 1].t) {
-      const a = k[i], b = k[i + 1], p = ease((lt - a.t) / (b.t - a.t));
+      const a = k[i], b = k[i + 1], p = (KEASE[a.ease] || ease)((lt - a.t) / (b.t - a.t));
       const o = {};
       PK.forEach(key => { o[key] = a[key] + (b[key] - a[key]) * p; });
       return o;
@@ -367,6 +372,35 @@ function transFx(fx, type, p, role) {
     case 'wipe':
       if (inn) { fx.clip = e; fx.au *= e; } else fx.au *= 1 - e;
       break;
+    case 'flash': {
+      const a = inn ? clamp(2 * e - 1, 0, 1) : clamp(1 - 2 * e, 0, 1);
+      fx.alpha *= a; fx.flash = 1 - a; fx.au *= a;
+      break;
+    }
+    case 'slideU':
+      if (inn) { fx.dy += (1 - e) * cv.height; fx.au *= e; } else { fx.dy -= e * cv.height; fx.au *= 1 - e; }
+      break;
+    case 'slideD':
+      if (inn) { fx.dy -= (1 - e) * cv.height; fx.au *= e; } else { fx.dy += e * cv.height; fx.au *= 1 - e; }
+      break;
+    case 'spin':
+      if (inn) { fx.rot += (1 - e) * -90; fx.scale *= 0.4 + 0.6 * e; fx.alpha *= e; fx.au *= e; } else { fx.rot += e * 90; fx.scale *= 1 - 0.6 * e; fx.alpha *= 1 - e; fx.au *= 1 - e; }
+      break;
+    case 'whip':
+      if (inn) { fx.dx += (1 - easeOutBack(p)) * W * 1.1; fx.au *= e; } else { fx.dx -= e * e * W * 1.1; fx.au *= 1 - e; }
+      break;
+    case 'circle':
+      if (inn) { fx.circle = e; fx.au *= e; } else fx.au *= 1 - e;
+      break;
+    case 'zoomout':
+      if (inn) { fx.alpha *= e; fx.scale *= 0.7 + 0.3 * e; fx.au *= e; } else { fx.scale *= 1 - 0.3 * e; fx.alpha *= 1 - e; fx.au *= 1 - e; }
+      break;
+    case 'glitch': {
+      const k = Math.floor(p * 14), hh = (Math.sin(k * 12.9898 + (inn ? 1 : 7)) * 43758.5453) % 1, h = hh < 0 ? hh + 1 : hh;
+      fx.dx += (h - 0.5) * 0.16 * W * (1 - p);
+      if (inn) { fx.alpha *= p > 0.85 || h > 0.4 ? 1 : 0; fx.au *= e; } else fx.au *= 1 - e;
+      break;
+    }
   }
 }
 function frameState(t) {
@@ -374,7 +408,7 @@ function frameState(t) {
   const main = mainClips();
   S.clips.forEach(c => {
     if (!(t >= c.start && t < c.end)) return;
-    const fx = { alpha: 1, dx: 0, scale: 1, clip: null, au: 1 };
+    const fx = { alpha: 1, dx: 0, dy: 0, rot: 0, scale: 1, clip: null, circle: null, flash: 0, au: 1 };
     if (c.layer === 1) {
       fx.au *= fadeF(c.fi || 0, c.fo || 0, t - c.start, len(c));
       ovl.push({ c, fx }); return;
@@ -489,10 +523,11 @@ function drawClip(c, t, fx) {
   }
   ctx.save();
   if (fx.clip !== null) { ctx.beginPath(); ctx.rect(0, 0, W * fx.clip, H); ctx.clip(); }
+  if (fx.circle != null) { ctx.beginPath(); ctx.arc(W / 2, H / 2, fx.circle * Math.hypot(W, H) / 2, 0, Math.PI * 2); ctx.clip(); }
   ctx.globalAlpha = clamp(fx.alpha * p.op / 100, 0, 1);
   if (c.blend && c.blend !== 'source-over') ctx.globalCompositeOperation = c.blend;
-  ctx.translate(W / 2 + p.px / 100 * W + fx.dx, H / 2 + p.py / 100 * H);
-  ctx.rotate(p.rot * Math.PI / 180);
+  ctx.translate(W / 2 + p.px / 100 * W + fx.dx, H / 2 + p.py / 100 * H + (fx.dy || 0));
+  ctx.rotate((p.rot + (fx.rot || 0)) * Math.PI / 180);
   const shaped = c.mask && c.mask !== 'none', bw = sw * s, bh = sh * s;
   ctx.save();
   if (shaped) { maskPath(c.mask, bw, bh); ctx.clip(); }
@@ -509,6 +544,7 @@ function drawClip(c, t, fx) {
     else ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
   }
   ctx.restore();
+  if (fx.flash > 0) { ctx.save(); ctx.globalAlpha = clamp(fx.flash, 0, 1); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
 function maskPath(type, w, h) {
   const m = Math.min(w, h);
