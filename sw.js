@@ -1,7 +1,7 @@
 // Vided service worker: works offline, and refreshes files in the background.
 // If something looks stale after an update, bump the version below (v7 -> v8).
-const CACHE = 'vided-v12';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'mux.js', 'demux.js', 'export.js', 'imgedit.js', 'audio.js', 'captions.js', 'voice.js', 'quick.js', 'cutout.js', 'whisper-worker.js', 'store.js', 'config.js', 'native.js', 'fx.js', 'pro.js', 'pro2.js', 'pro3.js', 'pro4.js', 'layout.js', 'gif.js', 'account.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'vided-v13';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'mux.js', 'demux.js', 'export.js', 'imgedit.js', 'audio.js', 'captions.js', 'voice.js', 'quick.js', 'cutout.js', 'whisper-worker.js', 'store.js', 'config.js', 'native.js', 'fx.js', 'pro.js', 'pro2.js', 'pro3.js', 'pro4.js', 'pro5.js', 'layout.js', 'gif.js', 'account.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));

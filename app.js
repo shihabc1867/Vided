@@ -31,7 +31,7 @@ function markDirty() { if (typeof storeDirty === 'function') storeDirty(); }
 const defCapStyle = () => ({ size: 46, color: '#ffffff', bgOn: true, bg: '#000000', y: 0.8, upper: false, anim: 'pop', bold: true, mode: 'normal', hl: '#ffd400', hlBox: false, hlTxt: '#000000' });
 const defBg = () => ({ on: false, type: 'chroma', key: '#00ff00', sim: 35, soft: 12, spill: 50, edge: 30, shift: 0, invert: false, fill: 'none', color: '#101820', blur: 20, img: '' });
 const S = {
-  clips: [], texts: [], audio: [], caps: [], capStyle: defCapStyle(),
+  clips: [], texts: [], adj: [], audio: [], caps: [], capStyle: defCapStyle(),
   sel: -1, tsel: -1, asel: -1, capSel: -1, pick: false, noCut: false,
   t: 0, total: 0,
   playing: false, exporting: false, fast: false,
@@ -127,6 +127,7 @@ function snap() {
   return {
     clips: S.clips.map(cloneClip),
     texts: S.texts.map(t => ({ ...t })),
+    adj: (S.adj || []).map(a => ({ ...a, fx: { ...a.fx }, gr: { ...a.gr }, f: { ...a.f } })),
     audio: S.audio.map(a => ({ ...a })),
     caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle },
     sel: S.sel, tsel: S.tsel, asel: S.asel, marks: (S.marks || []).slice()
@@ -136,6 +137,7 @@ function restore(s) {
   pauseAllMedia();
   S.clips = s.clips.map(cloneClip);
   S.texts = s.texts.map(t => ({ ...t }));
+  S.adj = (s.adj || []).map(a => ({ ...a, fx: { ...a.fx }, gr: { ...a.gr }, f: { ...a.f } }));
   S.audio = s.audio.map(a => ({ ...a }));
   S.caps = s.caps.map(c => ({ ...c })); S.capStyle = { ...s.capStyle };
   S.sel = s.sel; S.tsel = s.tsel; S.asel = s.asel; S.marks = (s.marks || []).slice();
@@ -657,6 +659,7 @@ function render(noSync) {
   const st = frameState(t);
   if (!noSync) syncMedia(t, st);
   st.forEach(({ c, fx }) => drawClip(c, t, fx));
+  if (window.drawAdj) drawAdj(t);
   if (S.vignette) {
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
     g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -770,7 +773,10 @@ function drawTimeline() {
   const oLanes = lanesOf(ovCl, c => c.start, c => c.end);
   const nO = oLanes.length ? Math.max(...oLanes) + 1 : 0;
   const yO = RULER + 4 + VH + 4;
-  const yT = yO + nO * 22 + (nO ? 2 : 0) + 6;
+  const adLanes = lanesOf(S.adj || [], a => a.from, a => a.to);
+  const nAd = adLanes.length ? Math.max(...adLanes) + 1 : 0;
+  const yAd = yO + nO * 22 + (nO ? 2 : 0) + 4;
+  const yT = yAd + nAd * 18 + (nAd ? 2 : 0) + 6;
   const yC = yT + nT * 16 + (nT ? 4 : 0);
   const yA = yC + nC * 16 + (nC ? 4 : 0);
   const Hpx = yA + nA * 26 + 10;
@@ -838,6 +844,18 @@ function drawTimeline() {
     hits.push({ x, y, w, h: 20, kind: 'clip', id: c.id });
   });
 
+  // adjustment layers
+  (S.adj || []).forEach((a, i) => {
+    const x = PAD + a.from * pps, w = Math.max(6, (a.to - a.from) * pps), y = yAd + adLanes[i] * 18;
+    tx.fillStyle = '#b8860b'; tx.fillRect(x, y, w, 16);
+    tx.save(); tx.beginPath(); tx.rect(x, y, w, 16); tx.clip();
+    tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'middle';
+    tx.fillText('◐ Adjustment ' + (i + 1), x + 4, y + 8);
+    tx.restore();
+    if (a.id === S.adjSel && S.fxAdj) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 14); }
+    hits.push({ x, y, w, h: 16, kind: 'adj', id: a.id });
+  });
+
   // text layers
   S.texts.forEach((L, i) => {
     const x = PAD + L.from * pps, w = Math.max(6, (L.to - L.from) * pps), y = yT + tLanes[i] * 16;
@@ -903,7 +921,8 @@ tl.addEventListener('click', e => {
   }
   const time = clamp((x - PAD) / pps, 0, S.total);
   if (hit) {
-    if (hit.kind === 'clip') { S.sel = hit.id; seek(time); }
+    if (hit.kind === 'clip') { S.sel = hit.id; S.fxAdj = false; seek(time); }
+    else if (hit.kind === 'adj') { S.adjSel = hit.id; S.fxAdj = true; openTab('fx'); }
     else if (hit.kind === 'text') { S.tsel = hit.id; openTab('text'); }
     else if (hit.kind === 'cap') { S.capSel = hit.id; openTab('captions'); }
     else { S.asel = hit.id; openTab('audio'); }

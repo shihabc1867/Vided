@@ -1,8 +1,8 @@
 /* Vided Phase 9a: video effects, pro colour grading, curves, HSL, .cube LUT.
    drawClip() hands a clip here (drawPost) when it has any effect or grade. */
 (function () {
-  const FXK = ['glitch', 'rgb', 'blur', 'pixel', 'vig', 'grain', 'shake', 'pulse'];
-  const GRK = ['temp', 'tint', 'hi', 'sh', 'cs', 'cm', 'ch', 'hr', 'hy', 'hg', 'hc', 'hb', 'hm', 'lut'];
+  const FXK = ['glitch', 'rgb', 'blur', 'pixel', 'vig', 'grain', 'shake', 'pulse', 'glow', 'sharpen', 'crop'];
+  const GRK = ['temp', 'tint', 'hi', 'sh', 'cs', 'cm', 'ch', 'hr', 'hy', 'hg', 'hc', 'hb', 'hm', 'bw', 'lut'];
 
   window.hasPost = c => {
     const e = c.fx, g = c.gr;
@@ -68,7 +68,7 @@
     const useCurve = g.cs || g.cm || g.ch, CL = useCurve ? curveLut(g) : null;
     const lutAmt = lut ? (g.lut || 0) / 100 : 0;
     const n = lut ? lut.size : 0, nm = n - 1, ld = lut ? lut.data : null;
-    const simple = !(temp || tint || hi || sh);
+    const simple = !(temp || tint || hi || sh), bwA = (g.bw || 0) / 100;
     for (let i = 0; i < d.length; i += 4) {
       let r = d[i], gg = d[i + 1], b = d[i + 2];
       if (!simple) {
@@ -77,6 +77,7 @@
         r += temp + k; gg += -tint + k; b += -temp + k;
         r = r < 0 ? 0 : r > 255 ? 255 : r; gg = gg < 0 ? 0 : gg > 255 ? 255 : gg; b = b < 0 ? 0 : b > 255 ? 255 : b;
       }
+      if (bwA) { const yy = 0.299 * r + 0.587 * gg + 0.114 * b; r += (yy - r) * bwA; gg += (yy - gg) * bwA; b += (yy - b) * bwA; }
       if (useCurve) { r = CL[r | 0]; gg = CL[gg | 0]; b = CL[b | 0]; }
       if (useBands) {
         const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), dl = mx - mn;
@@ -107,15 +108,8 @@
     }
   }
 
-  window.drawPost = function (c, t, fx) {
-    const W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
-    const e = c.fx || {}, g = c.gr || {};
-    const main = ctx, S0 = surf(W, H), o = S0.cx;
-    o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.globalCompositeOperation = 'source-over'; o.filter = 'none';
-    o.clearRect(0, 0, W, H);
-    ctx = o;
-    const nb = c.blend; c.blend = null;
-    try { drawClip(c, t, { ...fx, alpha: 1, clip: null, _pp: 1 }); } finally { ctx = main; c.blend = nb; }
+  function runLook(S0, c, t, W, H) {
+    const F = Math.min(W, H) / 720, e = c.fx || {}, g = c.gr || {}, o = S0.cx;
     const copyTmp = () => { tmp.cx.setTransform(1, 0, 0, 1, 0, 0); tmp.cx.clearRect(0, 0, W, H); tmp.cx.drawImage(S0.cv, 0, 0); };
 
     if (e.mirror) {
@@ -134,6 +128,11 @@
       small.cx.clearRect(0, 0, sw, sh); small.cx.drawImage(S0.cv, 0, 0, sw, sh);
       o.clearRect(0, 0, W, H); o.imageSmoothingEnabled = false; o.drawImage(small.cv, 0, 0, sw, sh, 0, 0, sw * blk, sh * blk); o.imageSmoothingEnabled = true;
     }
+    if (e.glow) {
+      copyTmp();
+      o.save(); o.globalCompositeOperation = 'screen'; o.globalAlpha = Math.min(1, e.glow / 100 * 0.9);
+      o.filter = `blur(${(6 + e.glow * 0.2) * F}px) brightness(1.5)`; o.drawImage(tmp.cv, 0, 0); o.restore(); o.filter = 'none';
+    }
     if (e.glitch) {
       copyTmp();
       const R = rnd(Math.floor(t * 12) + 7), n = 3 + Math.round(e.glitch / 12);
@@ -144,7 +143,7 @@
         o.clearRect(0, y, W, h); o.drawImage(tmp.cv, 0, y, W, h, sx, y, W, h);
       }
     }
-    const needPix = e.rgb || e.glitch || e.grain || (g && (g.temp || g.tint || g.hi || g.sh || g.cs || g.cm || g.ch || g.hr || g.hy || g.hg || g.hc || g.hb || g.hm || (g.lut && c.lutTxt)));
+    const needPix = e.rgb || e.glitch || e.grain || e.sharpen || (g && (g.temp || g.tint || g.hi || g.sh || g.cs || g.cm || g.ch || g.hr || g.hy || g.hg || g.hc || g.hb || g.hm || g.bw || (g.lut && c.lutTxt)));
     if (needPix) {
       const img = o.getImageData(0, 0, W, H), d = img.data;
       if (e.rgb || e.glitch) {
@@ -158,8 +157,15 @@
           }
         }
       }
+      if (e.sharpen) {
+        const k = e.sharpen / 100 * 0.9, src = new Uint8ClampedArray(d), st = W * 4;
+        for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+          const i = y * st + x * 4;
+          for (let ch = 0; ch < 3; ch++) d[i + ch] = src[i + ch] + k * (4 * src[i + ch] - src[i - 4 + ch] - src[i + 4 + ch] - src[i - st + ch] - src[i + st + ch]);
+        }
+      }
       const lut = c.lutTxt ? parseCube(c.lutTxt) : null;
-      if (g.temp || g.tint || g.hi || g.sh || g.cs || g.cm || g.ch || g.hr || g.hy || g.hg || g.hc || g.hb || g.hm || (g.lut && lut)) gradePass(d, g, lut, W, H);
+      if (g.temp || g.tint || g.hi || g.sh || g.cs || g.cm || g.ch || g.hr || g.hy || g.hg || g.hc || g.hb || g.hm || g.bw || (g.lut && lut)) gradePass(d, g, lut, W, H);
       if (e.grain) {
         const R = rnd(Math.floor(t * 24) + 3), amp = e.grain * 0.9;
         for (let i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue; const nz = (R() - 0.5) * amp; d[i] += nz; d[i + 1] += nz; d[i + 2] += nz; }
@@ -172,10 +178,23 @@
       gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${Math.min(1, e.vig / 100 * 1.1)})`);
       o.fillStyle = gr; o.fillRect(0, 0, W, H); o.restore();
     }
+  }
+
+  window.drawPost = function (c, t, fx) {
+    const W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
+    const e = c.fx || {}, g = c.gr || {};
+    const main = ctx, S0 = surf(W, H), o = S0.cx;
+    o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.globalCompositeOperation = 'source-over'; o.filter = 'none';
+    o.clearRect(0, 0, W, H);
+    ctx = o;
+    const nb = c.blend; c.blend = null;
+    try { drawClip(c, t, { ...fx, alpha: 1, clip: null, _pp: 1 }); } finally { ctx = main; c.blend = nb; }
+    runLook(S0, c, t, W, H);
     main.save();
     main.globalAlpha = clamp(fx.alpha, 0, 1);
     if (c.blend && c.blend !== 'source-over') main.globalCompositeOperation = c.blend;
     if (fx.clip !== null && fx.clip !== undefined) { main.beginPath(); main.rect(0, 0, W * fx.clip, H); main.clip(); }
+    if (e.crop) { const m = e.crop / 100; main.beginPath(); main.rect(W * m, H * m, W * (1 - 2 * m), H * (1 - 2 * m)); main.clip(); }
     let ox = 0, oy = 0, sc = 1;
     if (e.shake) { const a = e.shake * 0.35 * F; ox = (Math.sin(t * 53) + Math.sin(t * 29 + 1)) * 0.5 * a; oy = (Math.cos(t * 47) + Math.sin(t * 37 + 2)) * 0.5 * a; sc = 1 + e.shake / 100 * 0.04; }
     if (e.pulse) sc *= 1 + e.pulse / 100 * 0.12 * Math.pow(Math.max(0, Math.sin(t * Math.PI * 4)), 4);
@@ -183,6 +202,22 @@
     main.drawImage(S0.cv, 0, 0);
     main.restore();
   };
+
+  window.drawAdj = function (t) {
+    const list = S.adj || [];
+    for (const a of list) {
+      if (t < a.from || t >= a.to) continue;
+      const W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
+      const flt = filterOf(a.f || defFilter(), F), has = hasPost(a);
+      if (!has && flt === 'none') continue;
+      const S0 = surf(W, H), o = S0.cx;
+      o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.globalCompositeOperation = 'source-over'; o.filter = 'none';
+      o.clearRect(0, 0, W, H); o.drawImage(cv, 0, 0);
+      if (has) runLook(S0, a, t, W, H);
+      ctx.save(); ctx.filter = flt; ctx.globalAlpha = (a.amt == null ? 100 : a.amt) / 100; ctx.drawImage(S0.cv, 0, 0); ctx.restore();
+    }
+  };
+  window.fxTgt = () => (S.fxAdj && (S.adj || []).find(a => a.id === S.adjSel)) || selClip();
 
   /* ---------- FX tab ---------- */
   const tabs = document.getElementById('tabs');
@@ -201,7 +236,7 @@
     const inp = wrap.querySelector('input'); inp.dataset.unit = '';
     inp.addEventListener('input', () => {
       showVal(inp);
-      const c = selClip(); if (!c) return;
+      const c = fxTgt(); if (!c) return;
       touch('fx' + grp + key);
       c[grp] = { ...(c[grp] || {}), [key]: +inp.value };
       if (!S.playing) render(true); markDirty();
@@ -216,14 +251,15 @@
   const wrapTo = box;
   const lblt = txt => { const d = document.createElement('label'); d.className = 'lbl'; d.textContent = txt; wrapTo.appendChild(d); };
   lblt('Effects');
-  [['glitch', 'Glitch'], ['rgb', 'RGB split'], ['blur', 'Blur'], ['pixel', 'Pixelate'], ['vig', 'Vignette'], ['grain', 'Film grain'], ['shake', 'Camera shake'], ['pulse', 'Beat pulse']].forEach(([k, l]) => slider(wrapTo, 'fx', k, l, 0, 100, 0));
+  [['glitch', 'Glitch'], ['rgb', 'RGB split'], ['blur', 'Blur'], ['pixel', 'Pixelate'], ['vig', 'Vignette'], ['grain', 'Film grain'], ['shake', 'Camera shake'], ['pulse', 'Beat pulse'], ['glow', 'Glow'], ['sharpen', 'Sharpen'], ['crop', 'Crop (all sides)']].forEach(([k, l]) => slider(wrapTo, 'fx', k, l, 0, 100, 0));
   lblt('Mirror');
   const mir = document.createElement('select'); mir.id = 'fxMirror';
   mir.innerHTML = '<option value="0">Off</option><option value="1">Left to right</option><option value="2">Top to bottom</option><option value="3">Four-way</option>';
   wrapTo.appendChild(mir);
-  mir.onchange = () => { const c = selClip(); if (!c) return; touch('fxmirror' + nid()); c.fx = { ...(c.fx || {}), mirror: +mir.value }; render(true); };
+  mir.onchange = () => { const c = fxTgt(); if (!c) return; touch('fxmirror' + nid()); c.fx = { ...(c.fx || {}), mirror: +mir.value }; render(true); };
   lblt('Colour grading');
   [['temp', 'Temperature (cool ↔ warm)'], ['tint', 'Tint (green ↔ magenta)'], ['hi', 'Highlights'], ['sh', 'Shadows']].forEach(([k, l]) => slider(wrapTo, 'gr', k, l, -100, 100, 0));
+  slider(wrapTo, 'gr', 'bw', 'Black & white', 0, 100, 0);
   lblt('Curves (brightness)');
   [['cs', 'Dark tones'], ['cm', 'Mid tones'], ['ch', 'Light tones']].forEach(([k, l]) => slider(wrapTo, 'gr', k, l, -100, 100, 0));
   lblt('Colour mixer (saturation by colour)');
@@ -242,7 +278,7 @@
 
   $('lutFile').onchange = async e => {
     const f = e.target.files[0]; e.target.value = '';
-    const c = selClip(); if (!f || !c) return;
+    const c = fxTgt(); if (!f || !c) return;
     const txt = await f.text();
     const l = parseCube(txt);
     if (!l) return toast('That file is not a valid 3D .cube LUT');
@@ -251,14 +287,14 @@
     c.gr = { ...(c.gr || {}), lut: (c.gr && c.gr.lut) || 100 };
     refreshFxTab(); render(true); markDirty(); toast('LUT loaded: ' + f.name);
   };
-  $('lutClear').onclick = () => { const c = selClip(); if (!c) return; touch('lutc' + nid()); c.lutTxt = ''; c.lutName = ''; refreshFxTab(); render(true); };
-  $('fxReset').onclick = () => { const c = selClip(); if (!c) return; touch('fxr' + nid()); c.fx = {}; c.gr = {}; c.lutTxt = ''; c.lutName = ''; refreshFxTab(); render(true); };
+  $('lutClear').onclick = () => { const c = fxTgt(); if (!c) return; touch('lutc' + nid()); c.lutTxt = ''; c.lutName = ''; refreshFxTab(); render(true); };
+  $('fxReset').onclick = () => { const c = fxTgt(); if (!c) return; touch('fxr' + nid()); c.fx = {}; c.gr = {}; c.lutTxt = ''; c.lutName = ''; refreshFxTab(); render(true); };
   let clip = null;
-  $('fxCopy').onclick = () => { const c = selClip(); if (!c) return; clip = { fx: { ...(c.fx || {}) }, gr: { ...(c.gr || {}) }, f: { ...c.f }, lutTxt: c.lutTxt, lutName: c.lutName }; toast('Look copied'); };
-  $('fxPaste').onclick = () => { const c = selClip(); if (!c || !clip) return toast('Copy a look first'); touch('fxp' + nid()); c.fx = { ...clip.fx }; c.gr = { ...clip.gr }; c.f = { ...clip.f }; c.lutTxt = clip.lutTxt; c.lutName = clip.lutName; refreshAll(); render(true); };
+  $('fxCopy').onclick = () => { const c = fxTgt(); if (!c) return; clip = { fx: { ...(c.fx || {}) }, gr: { ...(c.gr || {}) }, f: { ...c.f }, lutTxt: c.lutTxt, lutName: c.lutName }; toast('Look copied'); };
+  $('fxPaste').onclick = () => { const c = fxTgt(); if (!c || !clip) return toast('Copy a look first'); touch('fxp' + nid()); c.fx = { ...clip.fx }; c.gr = { ...clip.gr }; c.f = { ...clip.f }; c.lutTxt = clip.lutTxt; c.lutName = clip.lutName; refreshAll(); render(true); };
 
   function refreshFxTab() {
-    const c = selClip();
+    const c = fxTgt();
     box.classList.toggle('off', !c);
     $('fxInfo').style.display = c ? 'none' : '';
     if (!c) return;

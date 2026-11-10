@@ -18,6 +18,12 @@
     if (eq.bass) parts.push({ in: biq('lowshelf', 120, eq.bass * 0.12) });
     if (eq.mid) parts.push({ in: biq('peaking', 1200, eq.mid * 0.12, 0.9) });
     if (eq.treble) parts.push({ in: biq('highshelf', 5000, eq.treble * 0.12) });
+    if (eq.comp) {
+      const dc = x.createDynamicsCompressor();
+      dc.threshold.value = -20 - eq.comp * 0.25; dc.knee.value = 12; dc.ratio.value = 3 + eq.comp / 12; dc.attack.value = 0.005; dc.release.value = 0.15;
+      const mg = x.createGain(); mg.gain.value = 1 + eq.comp / 100 * 1.1; dc.connect(mg);
+      parts.push({ in: dc, out: mg });
+    }
     if (vfx === 'telephone') parts.push({ in: biq('highpass', 400), out: null }, { in: biq('lowpass', 3200) });
     else if (vfx === 'megaphone') { const ws = x.createWaveShaper(); ws.curve = curve(8); parts.push({ in: biq('highpass', 500) }, { in: biq('lowpass', 4000) }, { in: ws }); }
     else if (vfx === 'underwater') parts.push({ in: biq('lowpass', 520, null, 1.2) });
@@ -55,10 +61,10 @@
 
   /* sliders/select builder for an audio item */
   function soundUI(parent, getItem, pre) {
-    const mk = (k, label) => {
+    const mk = (k, label, min) => {
       const w = document.createElement('div'); w.className = 'field';
       const id = pre + k;
-      w.innerHTML = `<label><span>${label}</span><b id="v-${id}"></b></label><input type="range" id="${id}" min="-100" max="100" step="1" value="0">`;
+      w.innerHTML = `<label><span>${label}</span><b id="v-${id}"></b></label><input type="range" id="${id}" min="${min == null ? -100 : min}" max="100" step="1" value="0">`;
       parent.appendChild(w);
       const inp = w.querySelector('input'); inp.dataset.unit = '';
       inp.addEventListener('input', () => {
@@ -70,7 +76,7 @@
       });
       showVal(inp);
     };
-    mk('bass', 'Bass'); mk('mid', 'Mids'); mk('treble', 'Treble');
+    mk('bass', 'Bass'); mk('mid', 'Mids'); mk('treble', 'Treble'); mk('comp', 'Compressor / limiter', 0);
     const lb = document.createElement('label'); lb.className = 'lbl'; lb.textContent = 'Voice / sound effect'; parent.appendChild(lb);
     const sel = document.createElement('select'); sel.id = pre + 'vfx';
     sel.innerHTML = VFX.map(v => `<option value="${v[0]}">${v[1]}</option>`).join('');
@@ -79,7 +85,7 @@
     const note = document.createElement('div'); note.className = 'hint'; note.textContent = 'Effects are heard in the preview and in the exported video.'; parent.appendChild(note);
     return () => {
       const it = getItem();
-      ['bass', 'mid', 'treble'].forEach(k => { const e = $(pre + k); e.value = (it && it.eq && it.eq[k]) || 0; showVal(e); });
+      ['bass', 'mid', 'treble', 'comp'].forEach(k => { const e = $(pre + k); e.value = (it && it.eq && it.eq[k]) || 0; showVal(e); });
       sel.value = (it && it.vfx) || 'none';
     };
   }
@@ -184,6 +190,7 @@
     const T = [0, S.total, S.t, ...S.marks];
     S.clips.forEach(c => { if (c.id !== skipId) T.push(c.start, c.end); });
     S.texts.forEach(L => { if (L.id !== skipId) T.push(L.from, L.to); });
+    (S.adj || []).forEach(a => { if (a.id !== skipId) T.push(a.from, a.to); });
     S.audio.forEach(a => { if (a.id !== skipId) T.push(a.start, a.start + alen(a)); });
     return T;
   }
@@ -207,10 +214,11 @@
     if (kind === 'clip') { it = S.clips.find(c => c.id === h.id); if (!it || it.layer !== 1) { toast('Main-track clips are reordered with the ◀ ▶ buttons'); return; } }
     else if (kind === 'text') it = S.texts.find(L => L.id === h.id);
     else if (kind === 'audio') it = S.audio.find(a => a.id === h.id);
+    else if (kind === 'adj') it = (S.adj || []).find(a => a.id === h.id);
     else return;
     if (!it) return;
-    const orig = kind === 'clip' ? it.at || 0 : kind === 'text' ? it.from : it.start;
-    const dur = kind === 'clip' ? len(it) : kind === 'text' ? it.to - it.from : alen(it);
+    const orig = kind === 'clip' ? it.at || 0 : (kind === 'text' || kind === 'adj') ? it.from : it.start;
+    const dur = kind === 'clip' ? len(it) : (kind === 'text' || kind === 'adj') ? it.to - it.from : alen(it);
     touch('drag' + nid());
     dr = { kind, it, x0: e.clientX, orig, dur, id: it.id };
     tl.setPointerCapture(e.pointerId);
@@ -225,7 +233,7 @@
     ns = +ns.toFixed(3);
     const it = dr.it;
     if (dr.kind === 'clip') { it.at = ns; compute(); }
-    else if (dr.kind === 'text') { it.from = ns; it.to = +(ns + dr.dur).toFixed(3); }
+    else if (dr.kind === 'text' || dr.kind === 'adj') { it.from = ns; it.to = +(ns + dr.dur).toFixed(3); }
     else it.start = ns;
     if (dr.kind !== 'clip') compute();
     drawTimeline(); if (!S.playing) render(true);
@@ -237,7 +245,7 @@
     dr = null; snapLine = null;
     tl._swallow = moved;
     if (moved) {
-      if (k === 'clip') S.sel = id; else if (k === 'text') S.tsel = id; else S.asel = id;
+      if (k === 'clip') S.sel = id; else if (k === 'text') S.tsel = id; else if (k === 'adj') { S.adjSel = id; S.fxAdj = true; } else S.asel = id;
       refreshAll(); markDirty();
     } else drawTimeline();
     setTimeout(() => { tl._swallow = false; }, 50);

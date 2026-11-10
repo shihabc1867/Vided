@@ -71,6 +71,7 @@ function serialize() {
       tr: { ...c.tr }, f: { ...c.f }, fx: { ...(c.fx || {}) }, gr: { ...(c.gr || {}) }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k }))
     })),
     texts: S.texts.map(t => { const { _box, ...r } = t; return r; }),
+    adj: (S.adj || []).map(a => ({ ...a })),
     audio: S.audio.map(a => pick(a, ['id', 'name', 'mkey', 'dur', 'in', 'out', 'fi', 'fo', 'start', 'vol', 'voice', 'duck', 'beats', 'bpm', 'eq', 'vfx'])),
     caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle }, duck: { ...S.duck }, marks: (S.marks || []).slice()
   };
@@ -119,7 +120,7 @@ function saveProject() {
 
 async function resetProject(name) {
   pause(); pauseAllMedia();
-  S.clips = []; S.texts = []; S.audio = []; S.caps = []; S.capStyle = defCapStyle(); S.capSel = -1; S.marks = []; S.duck = { amt: 70, video: true };
+  S.clips = []; S.texts = []; S.adj = []; S.audio = []; S.caps = []; S.capStyle = defCapStyle(); S.capSel = -1; S.marks = []; S.duck = { amt: 70, video: true };
   S.sel = -1; S.tsel = -1; S.asel = -1; S.t = 0;
   compute();
   U.length = 0; R.length = 0; lastKey = '';
@@ -158,6 +159,7 @@ async function openProject(id) {
   }
   S.clips = clips; S.audio = audio;
   S.texts = d.texts.map(t => ({ ...t }));
+  S.adj = (d.adj || []).map(a => ({ ...a }));
   S.caps = (d.caps || []).map(c => ({ ...c })); S.capStyle = { ...defCapStyle(), ...(d.capStyle || {}) }; S.capSel = -1; S.marks = (d.marks || []).slice(); S.duck = { amt: 70, video: true, ...(d.duck || {}) };
   S.ratio = d.ratio || '9:16'; S.bg = d.bg || '#000000'; S.letterbox = !!d.letterbox; S.vignette = !!d.vignette;
   $('xRatio').value = S.ratio; $('xBg').value = S.bg; $('xLb').checked = S.letterbox; $('xVig').checked = S.vignette;
