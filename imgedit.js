@@ -387,7 +387,7 @@ $('bFreeze').onclick = async () => {
   const t = S.t;
   if (!(t >= c.start && t < c.end)) return toast('Move the playhead inside the selected clip');
   pause();
-  await seekEl(c.el, clamp(c.in + (t - c.start) * c.speed, 0, c.dur - 0.01));
+  await seekEl(c.el, clamp(srcAt(c, t - c.start), 0, c.dur - 0.01));
   const cv2 = document.createElement('canvas');
   cv2.width = c.el.videoWidth; cv2.height = c.el.videoHeight;
   cv2.getContext('2d').drawImage(c.el, 0, 0);

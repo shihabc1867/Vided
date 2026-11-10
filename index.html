@@ -64,6 +64,9 @@
       <label class="filebtn">+ Add video / image
         <input type="file" id="addMedia" accept="video/*,image/*" multiple hidden>
       </label>
+      <label class="filebtn">+ Add overlay (picture-in-picture)
+        <input type="file" id="addOverlay" accept="video/*,image/*" multiple hidden>
+      </label>
       <div id="selInfo" class="hint">No clip selected. Tap a clip on the timeline.</div>
       <div class="needsel" id="n-media">
         <div class="grid3">
@@ -82,6 +85,24 @@
         <div class="field" data-id="trIn" data-label="Trim start" data-min="0" data-max="10" data-step="0.05" data-val="0" data-unit="s"></div>
         <div class="field" data-id="trOut" data-label="Trim end" data-min="0.1" data-max="10" data-step="0.05" data-val="10" data-unit="s"></div>
         <div class="field" data-id="spd" data-label="Speed" data-min="25" data-max="400" data-step="5" data-val="100" data-unit="%"></div>
+        <div id="n-ovat" class="field" data-id="ovAt" data-label="Overlay starts at" data-min="0" data-max="60" data-step="0.1" data-val="0" data-unit="s"></div>
+        <label class="lbl">Time effects</label>
+        <label class="check"><input type="checkbox" id="revOn"> Reverse clip (video only, silent preview)</label>
+        <select id="rampSel">
+          <option value="">Speed ramp: off</option>
+          <option value="slowfast">Ramp: slow &rarr; fast</option>
+          <option value="fastslow">Ramp: fast &rarr; slow</option>
+          <option value="bullet">Bullet time (slow-mo in the middle)</option>
+        </select>
+        <div class="grid2">
+          <select id="fzLen">
+            <option value="1">Hold 1 s</option>
+            <option value="2" selected>Hold 2 s</option>
+            <option value="3">Hold 3 s</option>
+            <option value="5">Hold 5 s</option>
+          </select>
+          <button id="bHold">Freeze &amp; hold</button>
+        </div>
         <div class="field" data-id="cvol" data-label="Clip volume" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
         <div id="n-clipfade">
           <div class="field" data-id="cfi" data-label="Sound fade in" data-min="0" data-max="5" data-step="0.1" data-val="0" data-unit="s"></div>
@@ -115,12 +136,48 @@
           <option value="warm">Warm</option>
           <option value="cool">Cool</option>
           <option value="vivid">Vivid</option>
+          <option value="cine">Cinematic</option>
+          <option value="teal">Teal &amp; orange</option>
+          <option value="golden">Golden hour</option>
+          <option value="moody">Moody</option>
+          <option value="fade">Faded film</option>
+          <option value="pop">Pop</option>
+          <option value="cyber">Cyber</option>
         </select>
         <div class="field" data-id="fb" data-label="Brightness" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
         <div class="field" data-id="fc" data-label="Contrast" data-min="0" data-max="200" data-step="1" data-val="100" data-unit="%"></div>
         <div class="field" data-id="fs" data-label="Saturation" data-min="0" data-max="300" data-step="1" data-val="100" data-unit="%"></div>
         <div class="field" data-id="fh" data-label="Hue" data-min="0" data-max="360" data-step="1" data-val="0" data-unit="&deg;"></div>
         <div class="field" data-id="fbl" data-label="Blur" data-min="0" data-max="20" data-step="0.5" data-val="0" data-unit="px"></div>
+        <label class="lbl">Blend mode</label>
+        <select id="fBlend">
+          <option value="source-over">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+          <option value="lighten">Lighten</option>
+          <option value="darken">Darken</option>
+          <option value="difference">Difference</option>
+          <option value="soft-light">Soft light</option>
+        </select>
+        <label class="lbl">Shape mask</label>
+        <select id="fMask">
+          <option value="none">None</option>
+          <option value="circle">Circle</option>
+          <option value="oval">Oval</option>
+          <option value="rounded">Rounded corners</option>
+          <option value="star">Star</option>
+          <option value="heart">Heart</option>
+        </select>
+        <div class="field" data-id="fBw" data-label="Border" data-min="0" data-max="20" data-step="1" data-val="0" data-unit="px"></div>
+        <label class="lbl">Border colour <input type="color" id="fBc" value="#ffffff"></label>
+        <label class="lbl">Picture-in-picture corner</label>
+        <div class="grid2">
+          <button data-pip="tl">&#8598; Top left</button>
+          <button data-pip="tr">Top right &#8599;</button>
+          <button data-pip="bl">&#8601; Bottom left</button>
+          <button data-pip="br">Bottom right &#8600;</button>
+        </div>
         <label class="lbl">Fit in frame</label>
         <select id="fFit">
           <option value="contain">Fit (show everything)</option>
@@ -201,6 +258,14 @@
           <option value="left">Slide from left</option>
           <option value="pop">Pop</option>
           <option value="type">Typewriter</option>
+          <option value="right">Slide from right</option>
+          <option value="down">Slide down</option>
+          <option value="zoom">Zoom in</option>
+          <option value="bounce">Bounce</option>
+          <option value="spin">Spin in</option>
+          <option value="shake">Shake</option>
+          <option value="flicker">Flicker</option>
+          <option value="wave">Wave (loops)</option>
         </select>
         <div class="grid2">
           <label class="lbl">Starts at (s)<input type="number" id="tFrom" min="0" step="0.1"></label>
@@ -423,8 +488,11 @@
         <option value="540">540p (small file)</option>
         <option value="720" selected>720p HD</option>
         <option value="1080">1080p Full HD</option>
+        <option value="1440">2K / 1440p</option>
+        <option value="2160">4K / 2160p</option>
       </select>
       <div class="hint" id="xPlanNote"></div>
+      <div class="hint">2K and 4K need a strong phone and lots of free memory; older phones may fail. 1080p is the safe choice.</div>
       <label class="lbl">Frame rate</label>
       <select id="xFps">
         <option value="24">24 fps</option>
@@ -436,6 +504,8 @@
         <option value="2500000">Low (smaller file)</option>
         <option value="5000000" selected>Medium</option>
         <option value="10000000">High</option>
+        <option value="20000000">Very high (2K)</option>
+        <option value="40000000">Ultra (4K)</option>
       </select>
       <div id="xFmtWrap">
         <label class="lbl">Format</label>
@@ -460,6 +530,24 @@
       <video id="xOut" controls playsinline></video>
       <a id="xDl" class="big green" style="display:none">Download video</a>
       <button id="xShare" class="big" style="display:none">Share</button>
+
+      <label class="lbl">Other formats</label>
+      <button id="wavBtn" class="big">Export audio only (WAV)</button>
+      <div class="grid2">
+        <select id="gFps">
+          <option value="10">GIF 10 fps</option>
+          <option value="15" selected>GIF 15 fps</option>
+          <option value="20">GIF 20 fps</option>
+        </select>
+        <select id="gRes">
+          <option value="240">Small (240p)</option>
+          <option value="360" selected>Medium (360p)</option>
+          <option value="480">Large (480p)</option>
+        </select>
+      </div>
+      <button id="gBtn" class="big">Export GIF (up to 30 s)</button>
+      <img id="gOut" alt="GIF preview" style="display:none;max-width:100%;border-radius:10px;margin-top:8px">
+      <button id="gDl" class="big green" style="display:none">Save GIF</button>
     </section>
 
     <!-- PROJECT -->
@@ -650,6 +738,10 @@
 <script src="store.js"></script>
 <script src="config.js"></script>
 <script src="native.js"></script>
+<script src="fx.js"></script>
+<script src="pro.js"></script>
+<script src="pro2.js"></script>
+<script src="gif.js"></script>
 <script src="account.js"></script>
 <script>
 if (window.Capacitor) {

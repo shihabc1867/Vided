@@ -58,7 +58,7 @@ let duckCache = { key: '', iv: [] };
 function duckSources() {
   const out = [];
   S.audio.forEach(a => { if (a.voice) out.push({ it: a, tl: s => a.start + (s - a.in), lo: a.in, hi: a.out }); });
-  if (S.duck.video) S.clips.forEach(c => { if (c.type === 'video' && c.vol > 0 && c.blob) out.push({ it: c, tl: s => c.start + (s - c.in) / c.speed, lo: c.in, hi: c.out }); });
+  if (S.duck.video) S.clips.forEach(c => { if (c.type === 'video' && c.vol > 0 && c.blob && !isSpecial(c)) out.push({ it: c, tl: s => c.start + (s - c.in) / c.speed, lo: c.in, hi: c.out }); });
   return out;
 }
 function duckIntervals() {

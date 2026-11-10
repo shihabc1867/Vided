@@ -39,7 +39,7 @@ const S = {
   ratio: '9:16', prev: 540, safe: false,
   duck: { amt: 70, video: true }
 };
-const cv = $('cv'), ctx = cv.getContext('2d');
+const cv = $('cv'); let ctx = cv.getContext('2d');
 const stage = $('stage');
 
 const PRESETS = {
@@ -50,14 +50,48 @@ const PRESETS = {
   vintage: 'sepia(.5) contrast(.9) brightness(1.1) saturate(.8)',
   warm: 'sepia(.35) saturate(1.4) hue-rotate(-10deg)',
   cool: 'hue-rotate(15deg) saturate(1.2) brightness(1.05)',
-  vivid: 'contrast(1.2) saturate(1.6)'
+  vivid: 'contrast(1.2) saturate(1.6)',
+  cine: 'contrast(1.2) saturate(1.1) brightness(.95) sepia(.15) hue-rotate(-10deg)',
+  teal: 'contrast(1.15) saturate(1.3) hue-rotate(10deg) brightness(.98)',
+  golden: 'sepia(.45) saturate(1.5) brightness(1.08) hue-rotate(-12deg)',
+  moody: 'contrast(1.3) saturate(.8) brightness(.85)',
+  fade: 'contrast(.85) brightness(1.1) saturate(.8) sepia(.15)',
+  pop: 'contrast(1.25) saturate(1.9) brightness(1.03)',
+  cyber: 'contrast(1.2) saturate(1.6) hue-rotate(60deg) brightness(.95)'
 };
 const defFilter = () => ({ preset: '', b: 100, c: 100, s: 100, h: 0, bl: 0 });
 
 const selClip = () => S.clips.find(c => c.id === S.sel) || null;
 const selText = () => S.texts.find(t => t.id === S.tsel) || null;
 const selAudio = () => S.audio.find(a => a.id === S.asel) || null;
-const len = c => (c.out - c.in) / c.speed;
+/* Clip time mapping: normal, speed ramps, reverse and freeze frame all go through srcAt()/len(). */
+const RAMPS = {
+  slowfast: u => 0.35 + 1.85 * u,                                   // starts slow, ends fast
+  fastslow: u => 2.2 - 1.85 * u,                                    // starts fast, ends slow
+  bullet: u => 1 - 0.78 * Math.exp(-Math.pow((u - 0.5) / 0.16, 2))  // normal, then slow in the middle, then normal
+};
+const rampTab = {};
+function rampOf(name) {                                             // normalized table: u (source fraction) -> t (time fraction)
+  if (rampTab[name]) return rampTab[name];
+  const g = RAMPS[name], N = 400, tt = new Float64Array(N + 1);
+  for (let i = 1; i <= N; i++) { const u0 = (i - 1) / N, u1 = i / N; tt[i] = tt[i - 1] + (1 / g(u0) + 1 / g((u0 + u1) / 2) * 4 + 1 / g(u1)) / 6 / N; }
+  return (rampTab[name] = { Z: tt[N], tt, N });
+}
+const len = c => c.fz ? c.fz : ((c.out - c.in) / c.speed) * (c.ramp && RAMPS[c.ramp] ? rampOf(c.ramp).Z : 1);
+function srcAt(c, lt) {
+  if (c.fz) return c.in;
+  const span = c.out - c.in;
+  let u;
+  if (c.ramp && RAMPS[c.ramp]) {
+    const R = rampOf(c.ramp), x = clamp(lt / len(c), 0, 1) * R.Z;
+    let lo = 0, hi = R.N;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.tt[m] <= x) lo = m; else hi = m; }
+    u = (lo + (x - R.tt[lo]) / Math.max(1e-9, R.tt[hi] - R.tt[lo])) / R.N;
+  } else u = (lt * c.speed) / span;
+  u = clamp(u, 0, 1);
+  return c.rev ? c.out - span * u : c.in + span * u;
+}
+const isSpecial = c => !!(c.rev || c.ramp || c.fz);
 const alen = a => a.out - a.in;
 const fadeF = (fi, fo, lt, L) => Math.min(fi > 0 ? clamp(lt / fi, 0, 1) : 1, fo > 0 ? clamp((L - lt) / fo, 0, 1) : 1);
 
@@ -88,14 +122,14 @@ function setR(id, val, min, max) {
 /* ---------- undo / redo ---------- */
 const U = [], R = [];
 let lastKey = '', lastTouch = 0;
-function cloneClip(c) { return { ...c, tr: { ...c.tr }, f: { ...c.f }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k })) }; }
+function cloneClip(c) { return { ...c, tr: { ...c.tr }, f: { ...c.f }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k })), fx: { ...(c.fx || {}) }, gr: { ...(c.gr || {}) } }; }
 function snap() {
   return {
     clips: S.clips.map(cloneClip),
     texts: S.texts.map(t => ({ ...t })),
     audio: S.audio.map(a => ({ ...a })),
     caps: S.caps.map(c => ({ ...c })), capStyle: { ...S.capStyle },
-    sel: S.sel, tsel: S.tsel, asel: S.asel
+    sel: S.sel, tsel: S.tsel, asel: S.asel, marks: (S.marks || []).slice()
   };
 }
 function restore(s) {
@@ -104,7 +138,7 @@ function restore(s) {
   S.texts = s.texts.map(t => ({ ...t }));
   S.audio = s.audio.map(a => ({ ...a }));
   S.caps = s.caps.map(c => ({ ...c })); S.capStyle = { ...s.capStyle };
-  S.sel = s.sel; S.tsel = s.tsel; S.asel = s.asel;
+  S.sel = s.sel; S.tsel = s.tsel; S.asel = s.asel; S.marks = (s.marks || []).slice();
   compute();
   S.t = clamp(S.t, 0, S.total);
   refreshAll();
@@ -138,16 +172,22 @@ function redo() {
 function updUR() { $('undo').disabled = !U.length; $('redo').disabled = !R.length; }
 
 /* ---------- timeline layout ---------- */
+const mainClips = () => S.clips.filter(c => c.layer !== 1);
 function compute() {
-  let end = 0;
-  S.clips.forEach((c, i) => {
+  let end = 0, prev = null;
+  mainClips().forEach((c, i) => {
     const L = len(c);
     let ov = 0;
-    if (i > 0 && c.tr.type !== 'none') ov = Math.min(c.tr.dur, 0.45 * len(S.clips[i - 1]), 0.45 * L);
+    if (prev && c.tr.type !== 'none') ov = Math.min(c.tr.dur, 0.45 * len(prev), 0.45 * L);
     c.ov = ov;
-    c.start = i === 0 ? 0 : end - ov;
+    c.start = prev ? end - ov : 0;
     c.end = c.start + L;
-    end = c.end;
+    end = c.end; prev = c;
+  });
+  S.clips.forEach(c => {
+    if (c.layer !== 1) return;
+    c.ov = 0; c.start = Math.max(0, c.at || 0); c.end = c.start + len(c);
+    end = Math.max(end, c.end);
   });
   S.total = end;
   $('scrub').max = end;
@@ -201,6 +241,7 @@ function wire(it) {
   it.gain = AC.createGain();
   it.src.connect(it.gain);
   it.gain.connect(master);
+  if (window.applyAudioFx) applyAudioFx(it);
 }
 function setGain(it, v) {
   if (!it.gain) return;
@@ -329,11 +370,16 @@ function transFx(fx, type, p, role) {
   }
 }
 function frameState(t) {
-  const out = [];
-  S.clips.forEach((c, i) => {
+  const out = [], ovl = [];
+  const main = mainClips();
+  S.clips.forEach(c => {
     if (!(t >= c.start && t < c.end)) return;
     const fx = { alpha: 1, dx: 0, scale: 1, clip: null, au: 1 };
-    const next = S.clips[i + 1];
+    if (c.layer === 1) {
+      fx.au *= fadeF(c.fi || 0, c.fo || 0, t - c.start, len(c));
+      ovl.push({ c, fx }); return;
+    }
+    const i = main.indexOf(c), next = main[i + 1];
     if (c.ov > 0 && t < c.start + c.ov) transFx(fx, c.tr.type, (t - c.start) / c.ov, 'in');
     else if (i === 0 && c.tr.type !== 'none' && t < c.start + c.tr.dur) {
       const p = ease(clamp((t - c.start) / c.tr.dur, 0, 1));
@@ -343,7 +389,7 @@ function frameState(t) {
     fx.au *= fadeF(c.fi || 0, c.fo || 0, t - c.start, len(c));
     out.push({ c, fx });
   });
-  return out;
+  return out.concat(ovl);
 }
 
 // Seek a <video> and wait until the frame is ready (used when exporting frame by frame).
@@ -367,17 +413,20 @@ function syncMedia(t, st) {
     const fx = fxOf.get(c.id);
     const el = c.el;
     if (fx) {
-      const target = clamp(c.in + (t - c.start) * c.speed, 0, Math.max(0, c.dur - 0.02));
-      const rate = clamp(c.speed, 0.25, 4);
-      if (el.playbackRate !== rate) el.playbackRate = rate;
-      if (S.playing) {
+      const lt = t - c.start;
+      const target = clamp(srcAt(c, lt), 0, Math.max(0, c.dur - 0.02));
+      const stepwise = c.rev || c.fz;                      // these cannot play forward normally, so show them frame by frame
+      let rate = clamp(c.speed, 0.25, 4);
+      if (c.ramp && !stepwise) rate = clamp((srcAt(c, lt + 0.05) - srcAt(c, lt)) / 0.05, 0.25, 4);
+      if (!stepwise && el.playbackRate !== rate) el.playbackRate = rate;
+      if (S.playing && !stepwise) {
         if (el.paused) { el.currentTime = target; el.play().catch(() => { }); }
         else if (Math.abs(el.currentTime - target) > 0.4) el.currentTime = target;
       } else {
         if (!el.paused) el.pause();
-        if (!el.seeking && Math.abs(el.currentTime - target) > 0.04) el.currentTime = target;
+        if (!el.seeking && Math.abs(el.currentTime - target) > (S.playing ? 0.03 : 0.04)) el.currentTime = target;
       }
-      setGain(c, S.playing ? (c.vol / 100) * fx.au : 0);
+      setGain(c, S.playing && !isSpecial(c) ? (c.vol / 100) * fx.au : 0);
     } else {
       if (!el.paused) el.pause();
       setGain(c, 0);
@@ -413,6 +462,7 @@ function filterOf(f, F) {
   return p.length ? p.join(' ') : 'none';
 }
 function drawClip(c, t, fx) {
+  if (!fx._pp && window.hasPost && hasPost(c)) return drawPost(c, t, fx);
   const W = cv.width, H = cv.height, F = Math.min(W, H) / 720;
   const p = evalProps(c, t - c.start);
   const fr = S.exporting ? c.exFrame : null; // frame from the fast exporter's decoder
@@ -440,12 +490,43 @@ function drawClip(c, t, fx) {
   ctx.save();
   if (fx.clip !== null) { ctx.beginPath(); ctx.rect(0, 0, W * fx.clip, H); ctx.clip(); }
   ctx.globalAlpha = clamp(fx.alpha * p.op / 100, 0, 1);
+  if (c.blend && c.blend !== 'source-over') ctx.globalCompositeOperation = c.blend;
   ctx.translate(W / 2 + p.px / 100 * W + fx.dx, H / 2 + p.py / 100 * H);
   ctx.rotate(p.rot * Math.PI / 180);
+  const shaped = c.mask && c.mask !== 'none', bw = sw * s, bh = sh * s;
+  ctx.save();
+  if (shaped) { maskPath(c.mask, bw, bh); ctx.clip(); }
   if (drot) ctx.rotate(drot * Math.PI / 180);
   ctx.filter = filterOf(c.f, F);
   try { ctx.drawImage(drawEl, -dw * s / 2, -dh * s / 2, dw * s, dh * s); } catch (e) { }
   ctx.restore();
+  if (c.bw > 0) {
+    ctx.filter = 'none';
+    ctx.lineWidth = c.bw * F * 2;
+    ctx.strokeStyle = c.bc || '#ffffff';
+    ctx.lineJoin = 'round';
+    if (shaped) { maskPath(c.mask, bw, bh); ctx.stroke(); }
+    else ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+  }
+  ctx.restore();
+}
+function maskPath(type, w, h) {
+  const m = Math.min(w, h);
+  ctx.beginPath();
+  if (type === 'circle') ctx.arc(0, 0, m / 2, 0, Math.PI * 2);
+  else if (type === 'oval') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+  else if (type === 'rounded') rr(-w / 2, -h / 2, w, h, m * 0.14);
+  else if (type === 'star') {
+    const R = m / 2, r = R * 0.45;
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r : R; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rad, Math.sin(a) * rad); }
+    ctx.closePath();
+  } else if (type === 'heart') {
+    const k = m / 2;
+    ctx.moveTo(0, k * 0.9);
+    ctx.bezierCurveTo(-k * 1.25, k * 0.15, -k * 0.95, -k * 0.95, 0, -k * 0.45);
+    ctx.bezierCurveTo(k * 0.95, -k * 0.95, k * 1.25, k * 0.15, 0, k * 0.9);
+    ctx.closePath();
+  }
 }
 function rr(x, y, w, h, r) {
   ctx.beginPath();
@@ -464,18 +545,35 @@ function drawText(L, t) {
   const lt = t - L.from, d = Math.max(0.1, L.to - L.from);
   const pin = ghost ? 1 : clamp(lt / 0.45, 0, 1);
   const pout = ghost ? 1 : clamp((L.to - t) / 0.3, 0, 1);
-  let a = ghost ? 0.4 : 1, dx = 0, dy = 0, sc = 1, str = L.text;
+  let a = ghost ? 0.4 : 1, dx = 0, dy = 0, sc = 1, str = L.text, rotT = 0, wave = false;
   switch (L.anim) {
     case 'fade': a *= Math.min(pin, pout); break;
     case 'up': a *= Math.min(pin, pout); dy = (1 - ease(pin)) * 70 * F; break;
     case 'left': dx = -(1 - ease(pin)) * 320 * F; a *= pout; break;
     case 'pop': sc = Math.max(0.01, easeOutBack(pin)); a *= pout; break;
+    case 'right': dx = (1 - ease(pin)) * 320 * F; a *= pout; break;
+    case 'down': a *= Math.min(pin, pout); dy = -(1 - ease(pin)) * 70 * F; break;
+    case 'zoom': sc = 0.2 + 0.8 * ease(pin) + (1 - ease(pin)) * 1.6; a *= Math.min(pin, pout); break;
+    case 'bounce': dy = -Math.abs(Math.sin(pin * Math.PI * 2.5)) * (1 - pin) * 90 * F; a *= Math.min(1, pin * 4) * pout; break;
+    case 'spin': rotT = (1 - ease(pin)) * -360; sc = Math.max(0.01, ease(pin)); a *= pout; break;
+    case 'shake': dx = Math.sin(lt * 60) * 8 * F * (1 - Math.min(1, lt / 0.8)); a *= Math.min(1, pin * 3) * pout; break;
+    case 'flicker': a *= (pin < 1 ? (Math.floor(lt * 18) % 2 ? 0.25 : 1) : 1) * pout; break;
+    case 'wave': a *= Math.min(pin, pout); wave = true; break;
     case 'type': {
       const dur = Math.max(0.3, Math.min(2.5, d * 0.6));
       str = L.text.slice(0, Math.ceil(L.text.length * clamp(lt / dur, 0, 1)));
       a *= pout;
       break;
     }
+  }
+  if (!ghost && L.aout && L.aout !== 'none' && pout < 1) {
+    const q = ease(pout);
+    if (L.aout === 'fade') a *= q;
+    else if (L.aout === 'down') dy += (1 - q) * 70 * F;
+    else if (L.aout === 'up') dy -= (1 - q) * 70 * F;
+    else if (L.aout === 'zoom') sc *= Math.max(0.01, q);
+    else if (L.aout === 'right') dx += (1 - q) * 320 * F;
+    else if (L.aout === 'left') dx -= (1 - q) * 320 * F;
   }
   const px = L.size * F;
   ctx.save();
@@ -486,6 +584,7 @@ function drawText(L, t) {
   L._box = { x: cx0 - w / 2 - pad - 12 * F, y: cy0 - px / 2 - pad - 12 * F, w: w + pad * 2 + 24 * F, h: px + pad * 2 + 24 * F };
   ctx.globalAlpha = a;
   ctx.translate(cx0, cy0);
+  ctx.rotate(((L.rot || 0) + rotT) * Math.PI / 180);
   ctx.scale(sc, sc);
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
@@ -494,13 +593,15 @@ function drawText(L, t) {
     ctx.fillStyle = L.bg;
     rr(-w / 2 - pad, -px / 2 - pad * 0.6, w + pad * 2, px + pad * 1.2, px * 0.25);
     ctx.fill();
-  } else {
+  } else if (!L.sticker) {
     ctx.lineWidth = px / 8;
     ctx.strokeStyle = 'rgba(0,0,0,.85)';
-    ctx.strokeText(str, -w / 2, 0);
+    if (wave) { let xx = -w / 2; for (const ch of str) { ctx.strokeText(ch, xx, Math.sin(t * 8 + xx * 0.02) * px * 0.15); xx += ctx.measureText(ch).width; } }
+    else ctx.strokeText(str, -w / 2, 0);
   }
   ctx.fillStyle = L.color;
-  ctx.fillText(str, -w / 2, 0);
+  if (wave) { let xx = -w / 2; for (const ch of str) { ctx.fillText(ch, xx, Math.sin(t * 8 + xx * 0.02) * px * 0.15); xx += ctx.measureText(ch).width; } }
+  else ctx.fillText(str, -w / 2, 0);
   if (L.id === S.tsel && !S.playing && !S.exporting) {
     ctx.globalAlpha = 1;
     ctx.setLineDash([8, 6]);
@@ -629,7 +730,11 @@ function drawTimeline() {
   const nT = tLanes.length ? Math.max(...tLanes) + 1 : 0;
   const nC = cLanes.length ? Math.max(...cLanes) + 1 : 0;
   const nA = aLanes.length ? Math.max(...aLanes) + 1 : 0;
-  const yT = RULER + 4 + VH + 6;
+  const ovCl = S.clips.filter(c => c.layer === 1);
+  const oLanes = lanesOf(ovCl, c => c.start, c => c.end);
+  const nO = oLanes.length ? Math.max(...oLanes) + 1 : 0;
+  const yO = RULER + 4 + VH + 4;
+  const yT = yO + nO * 22 + (nO ? 2 : 0) + 6;
   const yC = yT + nT * 16 + (nT ? 4 : 0);
   const yA = yC + nC * 16 + (nC ? 4 : 0);
   const Hpx = yA + nA * 26 + 10;
@@ -658,7 +763,7 @@ function drawTimeline() {
   }
 
   // video clips
-  S.clips.forEach((c, i) => {
+  mainClips().forEach((c, i) => {
     const x = PAD + c.start * pps, w = Math.max(4, (c.end - c.start) * pps), y = RULER + 4;
     tx.save();
     tx.beginPath(); tx.rect(x, y, w, VH); tx.clip();
@@ -673,7 +778,7 @@ function drawTimeline() {
     tx.fillStyle = g; tx.fillRect(x, y + VH - 18, w, 18);
     if (window.drawPeaks && c.type === 'video' && c.peaks && c.vol > 0) drawPeaks(tx, c.peaks, x, y + VH - 15, w, 12, c.in / c.dur, c.out / c.dur, 'rgba(255,255,255,.5)');
     tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'alphabetic';
-    tx.fillText((i + 1) + ' · ' + c.name + (c.speed !== 1 ? ' · ' + c.speed + 'x' : ''), x + 4, y + VH - 5);
+    tx.fillText((i + 1) + ' · ' + c.name + (c.speed !== 1 ? ' · ' + c.speed + 'x' : '') + (c.rev ? ' · ⟲' : '') + (c.ramp ? ' · ramp' : '') + (c.fz ? ' · freeze' : ''), x + 4, y + VH - 5);
     if (c.ov > 0) {
       tx.fillStyle = 'rgba(122,92,255,.55)';
       tx.fillRect(x, y, c.ov * pps, VH);
@@ -683,6 +788,18 @@ function drawTimeline() {
     tx.restore();
     if (c.id === S.sel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, VH - 2); }
     hits.push({ x, y, w, h: VH, kind: 'clip', id: c.id });
+  });
+
+  // overlay (picture-in-picture) lane
+  ovCl.forEach((c, i) => {
+    const x = PAD + c.start * pps, w = Math.max(6, (c.end - c.start) * pps), y = yO + oLanes[i] * 22;
+    tx.fillStyle = '#1f6f6a'; tx.fillRect(x, y, w, 20);
+    tx.save(); tx.beginPath(); tx.rect(x, y, w, 20); tx.clip();
+    tx.fillStyle = '#fff'; tx.font = '10px system-ui,sans-serif'; tx.textBaseline = 'middle';
+    tx.fillText('▣ ' + c.name + (c.rev ? ' ⟲' : '') + (c.ramp ? ' ramp' : ''), x + 4, y + 10);
+    tx.restore();
+    if (c.id === S.sel) { tx.strokeStyle = '#fff'; tx.lineWidth = 2; tx.strokeRect(x + 1, y + 1, w - 2, 18); }
+    hits.push({ x, y, w, h: 20, kind: 'clip', id: c.id });
   });
 
   // text layers
@@ -727,6 +844,7 @@ function drawTimeline() {
     hits.push({ x, y, w, h: 24, kind: 'audio', id: a.id });
   });
 
+  if (window.drawMarks) drawMarks(tx, Hpx);
   // playhead
   const px = PAD + S.t * pps;
   tx.strokeStyle = '#ff4d6d'; tx.fillStyle = '#ff4d6d'; tx.lineWidth = 2;
@@ -765,8 +883,8 @@ function refreshMedia() {
   const c = selClip();
   $('n-media').classList.toggle('off', !c);
   if (!c) { $('selInfo').textContent = 'No clip selected. Tap a clip on the timeline.'; return; }
-  const i = S.clips.indexOf(c);
-  $('selInfo').textContent = `Clip ${i + 1} of ${S.clips.length} · ${c.name} · ${fmt(len(c))}`;
+  const ov = c.layer === 1, i = ov ? 0 : mainClips().indexOf(c);
+  $('selInfo').textContent = ov ? `Overlay · ${c.name} · ${fmt(len(c))}` : `Clip ${i + 1} of ${mainClips().length} · ${c.name} · ${fmt(len(c))}`;
   const img = c.type === 'image';
   setR('trIn', c.in, 0, Math.max(0.1, (img ? 0 : c.dur - 0.1)));
   setR('trOut', c.out, 0.1, c.dur);
@@ -824,6 +942,7 @@ $('bSplit').onclick = () => {
     c = S.clips.find(k => t > k.start + 0.1 && t < k.end - 0.1) || null;
   }
   if (!c) return toast('Move the playhead inside a clip to split it');
+  if (isSpecial(c)) return toast('Turn off Reverse / Speed ramp before splitting this clip');
   touch('split' + nid());
   const lt = t - c.start;
   const srcT = c.in + lt * c.speed;
@@ -837,6 +956,7 @@ $('bSplit').onclick = () => {
     c.kf = [...c.kf.filter(k => k.t < lt - 0.01), { t: lt, ...mid }];
   }
   c.out = srcT;
+  if (c.layer === 1) b.at = c.start + lt;
   S.clips.splice(S.clips.indexOf(c) + 1, 0, b);
   S.sel = b.id;
   compute();
@@ -859,6 +979,7 @@ $('bDup').onclick = () => {
   touch('dup' + nid());
   const n = dupClip(c);
   n.tr = { type: 'none', dur: 0.5 };
+  if (c.layer === 1) n.at = c.end + 0.1;
   S.clips.splice(S.clips.indexOf(c) + 1, 0, n);
   S.sel = n.id;
   compute(); refreshAll();
@@ -869,16 +990,19 @@ $('bDel').onclick = () => {
   const i = S.clips.indexOf(c);
   if (c.type === 'video') c.el.pause();
   S.clips.splice(i, 1);
-  S.sel = S.clips.length ? S.clips[Math.min(i, S.clips.length - 1)].id : -1;
+  const mc0 = mainClips();
+  S.sel = mc0.length ? mc0[Math.min(Math.max(0, i - 1), mc0.length - 1)].id : (S.clips.length ? S.clips[0].id : -1);
   compute();
   S.t = clamp(S.t, 0, S.total);
   refreshAll();
 };
 function moveClip(dir) {
   const c = selClip(); if (!c) return;
-  const i = S.clips.indexOf(c), j = i + dir;
-  if (j < 0 || j >= S.clips.length) return;
+  if (c.layer === 1) return toast('Overlays are placed with "Starts at"');
+  const mc = mainClips(), mi = mc.indexOf(c), o = mc[mi + dir];
+  if (!o) return;
   touch('move' + nid());
+  const i = S.clips.indexOf(c), j = S.clips.indexOf(o);
   S.clips.splice(i, 1);
   S.clips.splice(j, 0, c);
   compute();
@@ -1240,6 +1364,7 @@ function refreshAll() {
   if (window.refreshCaps) refreshCaps();
   if (window.refreshCutout) refreshCutout();
   if (window.refreshFormat) refreshFormat();
+  if (window.refreshFx) refreshFx();
   $('empty').style.display = S.clips.length ? 'none' : 'flex';
   updateTime(); drawTimeline(); updUR();
 }

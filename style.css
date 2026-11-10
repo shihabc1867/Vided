@@ -137,3 +137,11 @@ input[type=color]{width:100%;height:38px;border:1px solid var(--line);border-rad
 #tour .tdots{letter-spacing:4px;font-size:12px;opacity:.7}
 #tour .trow{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:8px}
 #tabs button.tourhl{outline:2px solid #ffd400;animation:recp 1s infinite}
+
+/* Phase 9 */
+.markbar { display: flex; gap: 6px; padding: 4px 10px; overflow-x: auto; }
+.markbar button { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; }
+.markbar button.on { background: var(--accent, #7a5cff); color: #fff; }
+.stkgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.stkgrid .stk { font-size: 24px; padding: 6px 0; line-height: 1.1; }
+#p-fx .needsel.off { opacity: .45; pointer-events: none; }

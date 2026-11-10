@@ -104,8 +104,10 @@ function gateExport() {
 function applyPlanUI() {
   const pro = isPro();
   $('proBadge').hidden = !(ACC.on && pro);
-  const opt = $('xRes').querySelector('option[value="1080"]');
-  if (opt) opt.textContent = pro ? '1080p Full HD' : '1080p Full HD (Pro)';
+  $('xRes').querySelectorAll('option').forEach(o => {
+    if (!o.dataset.b) o.dataset.b = o.textContent.replace(/ \(Pro\)$/, '');
+    o.textContent = o.dataset.b + (+o.value > CFG.freeMaxRes && !pro ? ' (Pro)' : '');
+  });
   const note = $('xPlanNote');
   note.style.display = ACC.on && !pro ? '' : 'none';
   note.textContent = ACC.on && !pro ? `Free plan: exports up to ${CFG.freeMaxRes}p with a small “${CFG.watermark}” watermark. See the Account tab to upgrade.` : '';

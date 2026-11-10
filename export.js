@@ -72,7 +72,9 @@ async function runFast() {
 }
 
 async function pickVideoCodec(w, h, fps, bitrate) {
-  for (const codec of ['avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'avc1.640028', 'avc1.42001f']) {
+  const big = w * h > 2200000;
+  const list = big ? ['avc1.640034', 'avc1.640033', 'avc1.640032', 'avc1.64002a'] : ['avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'avc1.640028', 'avc1.42001f'];
+  for (const codec of list) {
     try {
       const r = await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate, framerate: fps, avc: { format: 'avc' } });
       if (r.supported) return codec;
@@ -109,9 +111,18 @@ async function mixAudio(total, sr = 48000) {
   let nodes = 0;
 
   for (const c of S.clips) {
-    if (c.type !== 'video' || !c.blob || c.vol <= 0) continue;
-    const buf = await decode(c.blob, c.mkey);
+    if (c.type !== 'video' || !c.blob || c.vol <= 0 || c.fz || c.ramp) continue;      // freeze and speed-ramp clips are silent
+    let buf = await decode(c.blob, c.mkey);
     if (!buf) continue;
+    if (c.rev) {
+      const rk = c.mkey + ':rev';
+      if (!cache.has(rk)) {
+        const rb = dctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) rb.getChannelData(ch).set(buf.getChannelData(ch).slice().reverse());
+        cache.set(rk, rb);
+      }
+      buf = cache.get(rk);
+    }
     const L = len(c);
     const steps = Math.max(2, Math.ceil(L * 100) + 1);
     const curve = new Float32Array(steps);
@@ -124,8 +135,10 @@ async function mixAudio(total, sr = 48000) {
     node.playbackRate.value = c.speed;
     const g = off.createGain();
     g.gain.setValueCurveAtTime(curve, c.start, L);
-    node.connect(g); g.connect(off.destination);
-    node.start(c.start, c.in, c.out - c.in);
+    const fxc = window.buildAudioFx ? buildAudioFx(off, c.eq, c.vfx) : null;
+    if (fxc) { node.connect(fxc.input); fxc.output.connect(g); } else node.connect(g);
+    g.connect(off.destination);
+    node.start(c.start, c.rev ? Math.max(0, buf.duration - c.out) : c.in, c.out - c.in);
     node.stop(c.start + L);
     nodes++;
     if (cancelled) return null;
@@ -142,7 +155,9 @@ async function mixAudio(total, sr = 48000) {
     node.buffer = buf;
     const g = off.createGain();
     g.gain.setValueCurveAtTime(curve, a.start, aL);
-    node.connect(g); g.connect(off.destination);
+    const fxa = window.buildAudioFx ? buildAudioFx(off, a.eq, a.vfx) : null;
+    if (fxa) { node.connect(fxa.input); fxa.output.connect(g); } else node.connect(g);
+    g.connect(off.destination);
     node.start(a.start, a.in, aL);
     node.stop(Math.min(total, a.start + aL));
     nodes++;
@@ -222,7 +237,7 @@ async function fastCore() {
     for (const c of S.clips) c.exFrame = null;
     for (const { c } of frameState(t)) {
       if (c.type !== 'video') continue;
-      const target = clamp(c.in + (t - c.start) * c.speed, 0, Math.max(0, c.dur - 0.001));
+      const target = clamp(srcAt(c, t - c.start), 0, Math.max(0, c.dur - 0.001));
       if (c.fs && !c.fs.failed) {
         try { c.exFrame = await c.fs.frameAt(target); } catch (e) { c.fs.failed = true; c.exFrame = null; }
       }
