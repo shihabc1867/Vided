@@ -67,7 +67,7 @@ function serialize() {
   return {
     v: 3, uid, ratio: S.ratio, bg: S.bg, letterbox: S.letterbox, vignette: S.vignette, sel: S.sel, t: S.t,
     clips: S.clips.map(c => ({
-      ...pick(c, ['id', 'name', 'type', 'mkey', 'dur', 'in', 'out', 'speed', 'vol', 'fi', 'fo', 'fit', 'sc', 'px', 'py', 'rot', 'op', 'rev', 'ramp', 'fz', 'blend', 'mask', 'bw', 'bc', 'layer', 'at', 'lutTxt', 'lutName', 'eq', 'vfx']),
+      ...pick(c, ['id', 'name', 'type', 'mkey', 'dur', 'in', 'out', 'speed', 'vol', 'fi', 'fo', 'fit', 'sc', 'px', 'py', 'rot', 'op', 'rev', 'ramp', 'fz', 'blend', 'mask', 'bw', 'bc', 'layer', 'at', 'lutTxt', 'lutName', 'eq', 'vfx', 'stab']),
       tr: { ...c.tr }, f: { ...c.f }, fx: { ...(c.fx || {}) }, gr: { ...(c.gr || {}) }, bg: { ...c.bg }, kf: c.kf.map(k => ({ ...k }))
     })),
     texts: S.texts.map(t => { const { _box, ...r } = t; return r; }),

@@ -533,6 +533,7 @@ function drawClip(c, t, fx) {
   const shaped = c.mask && c.mask !== 'none', bw = sw * s, bh = sh * s;
   ctx.save();
   if (shaped) { maskPath(c.mask, bw, bh); ctx.clip(); }
+  if (c.stab && window.stabAt) { const q = stabAt(c, t - c.start); if (q) { ctx.translate(q.x * sw * s, q.y * sh * s); ctx.rotate(q.r); ctx.scale(q.z, q.z); } }
   if (drot) ctx.rotate(drot * Math.PI / 180);
   ctx.filter = filterOf(c.f, F);
   try { ctx.drawImage(drawEl, -dw * s / 2, -dh * s / 2, dw * s, dh * s); } catch (e) { }
